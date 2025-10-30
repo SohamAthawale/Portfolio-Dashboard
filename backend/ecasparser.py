@@ -33,15 +33,32 @@ def parse_ecas_text(text: str) -> Tuple[List[Dict], float]:
 
     # Mutual funds
     mf_pattern = re.compile(
-        r"([A-Z0-9\- ]+\s*[-]?\s*[A-Za-z0-9\-\(\)&/ ]+?)\s+"
-        r"(INF[0-9A-Z]{9})\s+\S+\s+[\d\.]+\s+[\d\.]+\s+[\d,]+\.\d+\s+([\d,]+\.\d+)",
-        re.IGNORECASE,
-    )
+    r"(?:\d+|Profit/Loss\s*INR\)?\s*)?"                # optional prefix (86, 55, etc.)
+    r"([A-Z0-9]{0,6}\s*[-]?\s*[A-Za-z0-9\-\(\)&/ ]+?Fund[^\n\r]{0,40})"  # flexible fund name
+    r"\s+(INF[0-9A-Z]{9})"                             # ISIN
+    r"[\s\S]{0,120}?"                                  # gap before numbers
+    r"(?:[\d,]+\.\d+\s+){3}([\d,]+\.\d+)",             # capture 4th numeric (valuation)
+    re.IGNORECASE,
+)
+
     for m in mf_pattern.finditer(text):
         fund_name, isin, value = m.groups()
+
+        # 🔧 Clean up prefix junk like "86", "55", "Profit/Loss INR)", etc.
+        fund_name = re.sub(
+            r"^[\)\s]*(?:\d+\s*|Profit/Loss\s*INR\)?\s*)+",  # remove leading brackets, numbers, or "Profit/Loss INR)"
+            "",
+            fund_name.strip()
+        )
+
+
+        # 🧼 Optional extra polish (optional but recommended)
+        fund_name = re.sub(r'\s{2,}', ' ', fund_name)         # collapse double spaces
+        fund_name = re.sub(r'[\-:]+$', '', fund_name).strip() # trim trailing punctuation
+
         holdings.append({
             "type": "Mutual Fund",
-            "fund_name": fund_name.strip(),
+            "fund_name": fund_name,
             "isin_no": isin.strip(),
             "closing_balance": float(value.replace(",", "")),
         })
