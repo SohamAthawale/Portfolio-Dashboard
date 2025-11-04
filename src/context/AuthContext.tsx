@@ -1,9 +1,18 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
+/* -----------------------------------------------
+   ✅ USER TYPE (includes role)
+   ----------------------------------------------- */
 interface User {
+  user_id: number;
   email: string;
+  phone?: string;
+  role: 'admin' | 'user';
 }
 
+/* -----------------------------------------------
+   ✅ AUTH CONTEXT TYPE
+   ----------------------------------------------- */
 interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
@@ -11,33 +20,57 @@ interface AuthContextType {
   isLoading: boolean;
 }
 
+/* -----------------------------------------------
+   ✅ CONTEXT + API BASE URL
+   ----------------------------------------------- */
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// ✅ Centralized backend URL for both local & deployment
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
 
+/* -----------------------------------------------
+   ✅ PROVIDER COMPONENT
+   ----------------------------------------------- */
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // --- Check for existing session when app loads ---
+  /* -------------------------------------------------
+     🔹 Restore user session on page load
+     ------------------------------------------------- */
   useEffect(() => {
     const fetchSession = async () => {
       try {
-        const response = await fetch(`${API_BASE}/dashboard-data`, {
-          credentials: 'include', // ✅ Send existing cookie if present
+        const response = await fetch(`${API_BASE}/check-session`, {
+          credentials: 'include',
         });
 
         if (response.ok) {
-          // Session cookie valid — restore stored user info
-          const storedUser = localStorage.getItem('pms_user');
-          if (storedUser) {
-            setUser(JSON.parse(storedUser));
+          const data = await response.json();
+
+          if (data.logged_in && data.user_id && data.email) {
+            // ✅ Optionally fetch role info if stored locally
+            const storedUser = localStorage.getItem('pms_user');
+            if (storedUser) {
+              const parsed = JSON.parse(storedUser);
+              setUser(parsed);
+            } else {
+              // fallback — no local cache
+              setUser({
+                user_id: data.user_id,
+                email: data.email,
+                role: 'user', // default — role will be set after next login
+              });
+            }
+          } else {
+            // Session invalid or expired
+            setUser(null);
+            localStorage.removeItem('pms_user');
           }
         } else {
           setUser(null);
+          localStorage.removeItem('pms_user');
         }
-      } catch {
+      } catch (err) {
+        console.error('⚠️ Error restoring session:', err);
         setUser(null);
       } finally {
         setIsLoading(false);
@@ -47,18 +80,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fetchSession();
   }, []);
 
-  // --- Login Function ---
+  /* -------------------------------------------------
+     🔹 Login Function
+     ------------------------------------------------- */
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       const response = await fetch(`${API_BASE}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // ✅ allows Flask to set session cookie
+        credentials: 'include', // ✅ allows Flask to set secure session cookie
         body: JSON.stringify({ email, password }),
       });
 
       if (response.ok) {
-        const userData = { email };
+        const data = await response.json();
+
+        const userData: User = {
+          user_id: data.user.user_id,
+          email: data.user.email,
+          phone: data.user.phone,
+          role: data.user.role, // ✅ role returned from backend
+        };
+
         setUser(userData);
         localStorage.setItem('pms_user', JSON.stringify(userData));
         return true;
@@ -72,12 +115,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // --- Logout Function ---
+  /* -------------------------------------------------
+     🔹 Logout Function
+     ------------------------------------------------- */
   const logout = async (): Promise<void> => {
     try {
       await fetch(`${API_BASE}/logout`, {
         method: 'POST',
-        credentials: 'include', // ✅ ensures Flask clears cookie
+        credentials: 'include',
       });
     } catch (err) {
       console.error('⚠️ Logout failed:', err);
@@ -94,7 +139,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 };
 
-// --- Custom hook for easy access in components ---
+/* -----------------------------------------------
+   ✅ Custom Hook
+   ----------------------------------------------- */
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {

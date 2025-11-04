@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { ChartCard } from '../components/ChartCard';
 import { HoldingsTable, Holding } from '../components/HoldingsTable';
-import { TrendingUp, Wallet, PieChart, Briefcase } from 'lucide-react';
+import { TrendingUp, Wallet, PieChart, Briefcase, ArrowLeft } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 
-// ✅ Consistent API URL
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
 
 interface DashboardData {
@@ -24,6 +23,7 @@ export const Dashboard = () => {
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { portfolio_id } = useParams(); // ✅ detect portfolio route
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -31,9 +31,14 @@ export const Dashboard = () => {
         setIsLoading(true);
         setError(null);
 
-        const response = await fetch(`${API_BASE}/dashboard-data`, {
+        // ✅ Decide endpoint dynamically
+        const endpoint = portfolio_id
+          ? `${API_BASE}/portfolio/${portfolio_id}`
+          : `${API_BASE}/dashboard-data`;
+
+        const response = await fetch(endpoint, {
           method: 'GET',
-          credentials: 'include', // ✅ Send session cookie
+          credentials: 'include',
         });
 
         if (response.status === 401) {
@@ -43,9 +48,8 @@ export const Dashboard = () => {
         }
 
         if (!response.ok) {
-          console.error('❌ Backend error fetching dashboard data');
-          setError('Failed to fetch dashboard data.');
-          return;
+          const errData = await response.json();
+          throw new Error(errData.error || 'Failed to fetch dashboard data.');
         }
 
         const result = await response.json();
@@ -63,7 +67,6 @@ export const Dashboard = () => {
               : 'Equity'),
         }));
 
-        // Compute totals
         const equity_value = holdings
           .filter((h) => h.category === 'Equity')
           .reduce((sum, h) => sum + h.value, 0);
@@ -72,25 +75,26 @@ export const Dashboard = () => {
           .filter((h) => h.category === 'Mutual Fund')
           .reduce((sum, h) => sum + h.value, 0);
 
-        const total_value = result.total_value || equity_value + mf_value;
+        const total_value =
+          result.total_value || equity_value + mf_value + (result.bonds_value || 0);
 
         setData({
           total_value,
           equity_value,
           mf_value,
-          bonds_value: 0,
+          bonds_value: result.bonds_value || 0,
           holdings,
         });
-      } catch (err) {
-        console.error('⚠️ Network error:', err);
-        setError('Network error. Please check your connection.');
+      } catch (err: any) {
+        console.error('⚠️ Dashboard fetch error:', err);
+        setError(err.message || 'Network error. Please try again.');
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchDashboardData();
-  }, [navigate]);
+  }, [navigate, portfolio_id]);
 
   // --- UI States ---
   if (isLoading) {
@@ -106,9 +110,7 @@ export const Dashboard = () => {
   if (error) {
     return (
       <Layout>
-        <div className="text-center text-red-600 mt-12 font-medium">
-          {error}
-        </div>
+        <div className="text-center text-red-600 mt-12 font-medium">{error}</div>
       </Layout>
     );
   }
@@ -151,7 +153,7 @@ export const Dashboard = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-800">
-              Dashboard
+              {portfolio_id ? `Portfolio #${portfolio_id}` : 'Dashboard'}
             </h1>
             {user?.email && (
               <p className="text-sm text-gray-500 mt-1">
@@ -162,8 +164,17 @@ export const Dashboard = () => {
           <div className="text-sm text-gray-600">
             Last updated: {new Date().toLocaleDateString()}
           </div>
-          </div>
+        </div>
 
+        {/* Back Button for old portfolios */}
+        {portfolio_id && (
+          <button
+            onClick={() => navigate('/history')}
+            className="flex items-center gap-2 text-blue-600 hover:underline mt-2"
+          >
+            <ArrowLeft size={18} /> Back to History
+          </button>
+        )}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -182,11 +193,9 @@ export const Dashboard = () => {
                     <Icon className="text-white" size={24} />
                   </div>
                 </div>
-                <h3 className="text-sm font-medium text-gray-600 mb-1">
-                  {card.title}
-                </h3>
+                <h3 className="text-sm font-medium text-gray-600 mb-1">{card.title}</h3>
                 <p className="text-2xl font-bold text-gray-800">
-                  ₹{card.value.toLocaleString()}
+                  ₹{card.value.toLocaleString('en-IN')}
                 </p>
               </motion.div>
             );
