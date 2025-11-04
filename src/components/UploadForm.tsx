@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, FileText, CheckCircle } from 'lucide-react';
+import { Upload, FileText, CheckCircle, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 
-// ✅ Centralize backend URL for easy deployment later
+// ✅ Centralize backend URL
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
 
 interface UploadFormProps {
@@ -16,9 +16,30 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState('');
+  const [members, setMembers] = useState<any[]>([]);
+  const [selectedMember, setSelectedMember] = useState('');
   const navigate = useNavigate();
   const { user } = useAuth();
 
+  // ✅ Fetch family members
+  useEffect(() => {
+    const fetchMembers = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/family/members`, {
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setMembers(data);
+        }
+      } catch (err) {
+        console.error('❌ Error fetching members:', err);
+      }
+    };
+    fetchMembers();
+  }, []);
+
+  // ✅ File selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
@@ -32,6 +53,7 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
     }
   };
 
+  // ✅ Submit upload
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file || !user?.email) {
@@ -43,13 +65,21 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
     setUploadProgress(0);
     setError('');
 
-    // Ask for password (if any)
     const password = prompt('Enter PDF password (if applicable):') || '';
-
     const formData = new FormData();
     formData.append('file', file);
     formData.append('email', user.email);
     formData.append('password', password);
+
+    // ✅ Add member_id if selected
+    if (selectedMember) {
+      formData.append('member_id', selectedMember);
+    }
+
+    // ✅ Choose endpoint dynamically
+    const endpoint = selectedMember
+      ? `${API_BASE}/upload-member`
+      : `${API_BASE}/upload`;
 
     try {
       const progressInterval = setInterval(() => {
@@ -62,11 +92,10 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
         });
       }, 200);
 
-      // ✅ Include credentials for Flask session cookies
-      const response = await fetch(`${API_BASE}/upload`, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         body: formData,
-        credentials: 'include', // ✅ Ensures Flask session cookie is sent
+        credentials: 'include',
       });
 
       clearInterval(progressInterval);
@@ -78,7 +107,12 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
         console.log('✅ Upload success:', data);
         setTimeout(() => {
           onSuccess();
-          navigate('/dashboard');
+          // Redirect dynamically
+          if (selectedMember) {
+            navigate(`/family/member/${selectedMember}`);
+          } else {
+            navigate('/dashboard');
+          }
         }, 500);
       } else {
         setError(data.error || 'Upload failed. Please try again.');
@@ -106,11 +140,39 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
         </div>
         <h2 className="text-2xl font-bold text-gray-800 mb-2">Upload ECAS Statement</h2>
         <p className="text-gray-600">
-          Upload your PDF statement from CDSL, NSDL, CAMS, or KFintech
+          Upload your PDF statement for yourself or a family member
         </p>
       </div>
 
       <form onSubmit={handleSubmit}>
+        {/* ✅ Member Dropdown */}
+        {members.length > 0 && (
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Upload For
+            </label>
+            <div className="relative">
+              <Users
+                size={18}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+              <select
+                value={selectedMember}
+                onChange={(e) => setSelectedMember(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 text-gray-700 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              >
+                <option value="">Myself</option>
+                {members.map((m) => (
+                  <option key={m.member_id} value={m.member_id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* File Upload */}
         <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors">
           <input
             type="file"
@@ -128,6 +190,7 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
           </label>
         </div>
 
+        {/* File Selected */}
         <AnimatePresence>
           {file && (
             <motion.div
@@ -149,6 +212,7 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
           )}
         </AnimatePresence>
 
+        {/* Upload Progress */}
         {isUploading && (
           <div className="mt-4">
             <div className="flex items-center justify-between mb-2">
@@ -166,12 +230,14 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
           </div>
         )}
 
+        {/* Error Message */}
         {error && (
           <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
             {error}
           </div>
         )}
 
+        {/* Submit */}
         <button
           type="submit"
           disabled={!file || isUploading}

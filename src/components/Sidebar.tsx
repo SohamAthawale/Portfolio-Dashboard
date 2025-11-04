@@ -1,5 +1,12 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Upload as UploadIcon, History, LogOut, ClipboardList } from 'lucide-react';
+import {
+  LayoutDashboard,
+  Upload as UploadIcon,
+  History,
+  LogOut,
+  ClipboardList,
+  Users,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export const Sidebar = () => {
@@ -24,6 +31,8 @@ export const Sidebar = () => {
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/upload', label: 'Upload', icon: UploadIcon },
     { path: '/history', label: 'History', icon: History },
+    // ✅ New Family Dashboard route for users
+    { path: '/family-dashboard', label: 'Family Dashboard', icon: Users },
   ];
 
   const adminNavItems = [
@@ -31,7 +40,7 @@ export const Sidebar = () => {
     { path: '/service-requests', label: 'Service Requests', icon: ClipboardList },
   ];
 
-  // 🔹 Pick navigation items based on role
+  // 🔹 Choose which nav items to show based on user role
   const navItems = user?.role === 'admin' ? adminNavItems : userNavItems;
 
   return (
@@ -50,7 +59,9 @@ export const Sidebar = () => {
       <nav className="px-3 mt-4">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = location.pathname === item.path;
+          const isActive =
+            location.pathname === item.path ||
+            location.pathname.startsWith(item.path);
 
           return (
             <Link
@@ -69,7 +80,7 @@ export const Sidebar = () => {
         })}
       </nav>
 
-      {/* Logout */}
+      {/* Logout Button */}
       <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-gray-100">
         <button
           onClick={handleLogout}

@@ -7,7 +7,9 @@ import { Upload } from './pages/Upload';
 import { Dashboard } from './pages/Dashboard';
 import { History } from './pages/History';
 import { AdminDashboard } from './pages/AdminDashboard';
-import { ServiceRequests } from './pages/ServiceRequests'; // ✅ optional admin-only page
+import { ServiceRequests } from './pages/ServiceRequests';
+import { FamilyDashboard } from './pages/FamilyDashboard';
+import { MemberDashboard } from './pages/MemberDashboard';
 
 /* -------------------------------------------------
    ✅ ROLE-BASED DASHBOARD WRAPPER
@@ -56,6 +58,25 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['user']}>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ---------- FAMILY ROUTES ---------- */}
+          <Route
+            path="/family-dashboard"
+            element={
+              <ProtectedRoute allowedRoles={['user']}>
+                <FamilyDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/family/member/:member_id"
+            element={
+              <ProtectedRoute allowedRoles={['user']}>
+                <MemberDashboard />
               </ProtectedRoute>
             }
           />
