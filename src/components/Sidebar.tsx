@@ -5,7 +5,6 @@ import {
   History,
   LogOut,
   ClipboardList,
-  Users,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -31,8 +30,6 @@ export const Sidebar = () => {
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/upload', label: 'Upload', icon: UploadIcon },
     { path: '/history', label: 'History', icon: History },
-    // ✅ New Family Dashboard route for users
-    { path: '/family-dashboard', label: 'Family Dashboard', icon: Users },
   ];
 
   const adminNavItems = [

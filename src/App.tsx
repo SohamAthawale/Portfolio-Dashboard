@@ -8,8 +8,7 @@ import { Dashboard } from './pages/Dashboard';
 import { History } from './pages/History';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { ServiceRequests } from './pages/ServiceRequests';
-import { FamilyDashboard } from './pages/FamilyDashboard';
-import { MemberDashboard } from './pages/MemberDashboard';
+import { ProfilePage } from './pages/ProfilePage'; // ✅ NEW IMPORT
 
 /* -------------------------------------------------
    ✅ ROLE-BASED DASHBOARD WRAPPER
@@ -62,25 +61,6 @@ function App() {
             }
           />
 
-          {/* ---------- FAMILY ROUTES ---------- */}
-          <Route
-            path="/family-dashboard"
-            element={
-              <ProtectedRoute allowedRoles={['user']}>
-                <FamilyDashboard />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/family/member/:member_id"
-            element={
-              <ProtectedRoute allowedRoles={['user']}>
-                <MemberDashboard />
-              </ProtectedRoute>
-            }
-          />
-
           {/* ---------- ADMIN ROUTES ---------- */}
           <Route
             path="/service-requests"
@@ -97,6 +77,16 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['admin', 'user']}>
                 <RoleBasedDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ---------- ✅ NEW PROFILE PAGE ---------- */}
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'user']}>
+                <ProfilePage />
               </ProtectedRoute>
             }
           />

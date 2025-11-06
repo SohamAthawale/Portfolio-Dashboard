@@ -107,12 +107,8 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
         console.log('✅ Upload success:', data);
         setTimeout(() => {
           onSuccess();
-          // Redirect dynamically
-          if (selectedMember) {
-            navigate(`/family/member/${selectedMember}`);
-          } else {
-            navigate('/dashboard');
-          }
+          // ✅ Redirect to unified dashboard
+          navigate('/dashboard');
         }, 500);
       } else {
         setError(data.error || 'Upload failed. Please try again.');
@@ -145,30 +141,51 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
       </div>
 
       <form onSubmit={handleSubmit}>
-        {/* ✅ Member Dropdown */}
+        {/* ✅ Interactive Family Member Cards */}
         {members.length > 0 && (
           <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-800 mb-3">
               Upload For
             </label>
-            <div className="relative">
-              <Users
-                size={18}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-              />
-              <select
-                value={selectedMember}
-                onChange={(e) => setSelectedMember(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 text-gray-700 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {/* Myself card */}
+              <motion.button
+                type="button"
+                onClick={() => setSelectedMember('')}
+                whileTap={{ scale: 0.97 }}
+                className={`p-3 border rounded-xl flex flex-col items-center justify-center gap-1 text-sm transition ${
+                  selectedMember === ''
+                    ? 'border-blue-500 bg-blue-50 text-blue-600 font-semibold shadow-sm'
+                    : 'border-gray-300 hover:border-blue-400 text-gray-700'
+                }`}
               >
-                <option value="">Myself</option>
-                {members.map((m) => (
-                  <option key={m.member_id} value={m.member_id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
+                <Users size={20} />
+                Myself
+              </motion.button>
+
+              {/* Family Member cards */}
+              {members.map((m) => (
+                <motion.button
+                  key={m.member_id}
+                  type="button"
+                  onClick={() => setSelectedMember(m.member_id)}
+                  whileTap={{ scale: 0.97 }}
+                  className={`p-3 border rounded-xl flex flex-col items-center justify-center gap-1 text-sm transition ${
+                    selectedMember === m.member_id
+                      ? 'border-blue-500 bg-blue-50 text-blue-600 font-semibold shadow-sm'
+                      : 'border-gray-300 hover:border-blue-400 text-gray-700'
+                  }`}
+                >
+                  <Users size={20} />
+                  {m.name}
+                </motion.button>
+              ))}
             </div>
+
+            <p className="text-xs text-gray-500 mt-2">
+              Select whose portfolio statement you’re uploading.
+            </p>
           </div>
         )}
 

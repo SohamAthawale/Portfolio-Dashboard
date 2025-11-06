@@ -1,0 +1,220 @@
+import { useEffect, useState } from 'react';
+import { Layout } from '../components/Layout';
+import { Users, PlusCircle, Mail, Phone, Clock } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { useAuth } from '../context/AuthContext';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
+
+interface FamilyMember {
+  member_id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  created_at?: string;
+}
+
+export const ProfilePage = () => {
+  const { user } = useAuth();
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
+  const [uploadHistoryCount, setUploadHistoryCount] = useState<number>(0);
+  const [showForm, setShowForm] = useState(false);
+  const [newMember, setNewMember] = useState({ name: '', email: '', phone: '' });
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // ✅ Fetch family members and upload history
+        const [famRes, histRes] = await Promise.all([
+          fetch(`${API_BASE}/family/members`, { credentials: 'include' }),
+          fetch(`${API_BASE}/history-data`, { credentials: 'include' }),
+        ]);
+
+        const family = await famRes.json();
+        const history = await histRes.json();
+
+        setFamilyMembers(Array.isArray(family) ? family : []);
+        setUploadHistoryCount(Array.isArray(history) ? history.length : 0);
+      } catch (error) {
+        console.error('❌ Error fetching profile data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  // ✅ Add family member
+  const handleAddMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMember.name.trim()) {
+      alert('Name is required');
+      return;
+    }
+    setAdding(true);
+    try {
+      const res = await fetch(`${API_BASE}/family/add-member`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(newMember),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setFamilyMembers((prev) => [...prev, data.member]);
+        setNewMember({ name: '', email: '', phone: '' });
+        setShowForm(false);
+      } else {
+        alert(data.error || 'Error adding member');
+      }
+    } catch (error) {
+      console.error('❌ Error adding family member:', error);
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  return (
+    <Layout>
+      <div className="p-8">
+        <h1 className="text-2xl font-semibold mb-6">User Profile</h1>
+
+        {/* ✅ User info */}
+        <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
+          <p className="text-lg font-medium text-gray-800 mb-2">{user?.email}</p>
+          <p className="text-gray-600">Welcome to your family dashboard.</p>
+        </div>
+
+        {/* ✅ Summary cards (Only 2 now) */}
+        {loading ? (
+          <p>Loading data...</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+            {/* Family Members */}
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              className="bg-white p-6 rounded-xl shadow-sm flex items-center gap-4"
+            >
+              <Users size={32} className="text-blue-500" />
+              <div>
+                <p className="text-gray-600 text-sm">Family Members</p>
+                <p className="text-xl font-semibold">{familyMembers.length}</p>
+              </div>
+            </motion.div>
+
+            {/* Total Uploads */}
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              className="bg-white p-6 rounded-xl shadow-sm flex items-center gap-4"
+            >
+              <Clock size={32} className="text-purple-500" />
+              <div>
+                <p className="text-gray-600 text-sm">Total Uploads</p>
+                <p className="text-xl font-semibold">{uploadHistoryCount}</p>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* ✅ Add member toggle */}
+        <div className="mb-6">
+          <button
+            onClick={() => setShowForm((prev) => !prev)}
+            className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2 rounded-lg shadow hover:bg-blue-700 transition"
+          >
+            <PlusCircle size={18} />
+            {showForm ? 'Cancel' : 'Add Family Member'}
+          </button>
+        </div>
+
+        {/* ✅ Add member form */}
+        {showForm && (
+          <form
+            onSubmit={handleAddMember}
+            className="bg-white rounded-xl shadow-sm p-6 mb-8 space-y-4 max-w-md"
+          >
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Name
+              </label>
+              <input
+                type="text"
+                className="w-full border rounded-lg px-3 py-2 focus:ring focus:ring-blue-100"
+                value={newMember.name}
+                onChange={(e) =>
+                  setNewMember({ ...newMember, name: e.target.value })
+                }
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email
+              </label>
+              <input
+                type="email"
+                className="w-full border rounded-lg px-3 py-2 focus:ring focus:ring-blue-100"
+                value={newMember.email}
+                onChange={(e) =>
+                  setNewMember({ ...newMember, email: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Phone
+              </label>
+              <input
+                type="text"
+                className="w-full border rounded-lg px-3 py-2 focus:ring focus:ring-blue-100"
+                value={newMember.phone}
+                onChange={(e) =>
+                  setNewMember({ ...newMember, phone: e.target.value })
+                }
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={adding}
+              className="bg-blue-600 text-white px-5 py-2 rounded-lg shadow hover:bg-blue-700 transition disabled:opacity-50"
+            >
+              {adding ? 'Adding...' : 'Add Member'}
+            </button>
+          </form>
+        )}
+
+        {/* ✅ Member list */}
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <h2 className="text-lg font-semibold mb-4">Family Members</h2>
+          {familyMembers.length === 0 ? (
+            <p className="text-gray-500">No family members added yet.</p>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {familyMembers.map((m) => (
+                <motion.div
+                  key={m.member_id}
+                  whileHover={{ scale: 1.02 }}
+                  className="border rounded-lg p-4 flex flex-col gap-2"
+                >
+                  <p className="font-medium text-gray-800">{m.name}</p>
+                  {m.email && (
+                    <p className="text-sm text-gray-600 flex items-center gap-2">
+                      <Mail size={14} /> {m.email}
+                    </p>
+                  )}
+                  {m.phone && (
+                    <p className="text-sm text-gray-600 flex items-center gap-2">
+                      <Phone size={14} /> {m.phone}
+                    </p>
+                  )}
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Layout>
+  );
+};

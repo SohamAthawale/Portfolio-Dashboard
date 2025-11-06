@@ -1,3 +1,4 @@
+import traceback
 from flask import Flask, request, jsonify, send_from_directory, session
 from flask_cors import CORS
 from flask_session import Session
@@ -286,25 +287,70 @@ def upload_ecas():
 # ---------- Dashboard Data ----------
 @app.route("/dashboard-data")
 def dashboard_data():
+    """
+    Returns combined dashboard data:
+      - For the logged-in user (if include_user=true)
+      - For selected family members (?members=1,2,3)
+      - Each member automatically gets their latest portfolio
+        (or falls back to older ones if newer not uploaded)
+    """
+
     user_id = session.get("user_id")
     if not user_id:
         return jsonify({"error": "Unauthorized"}), 401
 
+    include_user = request.args.get("include_user", "true").lower() == "true"
+    members_param = request.args.get("members", "")
+    member_ids = [int(x) for x in members_param.split(",") if x.strip().isdigit()] if members_param else []
+
+    # If no user or member selected
+    if not include_user and not member_ids:
+        return jsonify({
+            "total_value": 0,
+            "equity_value": 0,
+            "mf_value": 0,
+            "bonds_value": 0,
+            "holdings": [],
+            "filters": {"user": False, "members": []},
+        }), 200
+
     conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT fund_name AS company, isin_no AS isin, closing_balance AS value, type AS category
-        FROM portfolios
-        WHERE user_id = %s
-          AND portfolio_id = (SELECT MAX(portfolio_id) FROM portfolios WHERE user_id = %s)
-    """, (user_id, user_id))
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    # ✅ Get the latest portfolio per user/member
+    # The subquery picks the MAX(portfolio_id) for each (user_id, member_id)
+    query = """
+        SELECT 
+            p.user_id,
+            p.member_id,
+            p.portfolio_id,
+            p.fund_name AS company,
+            p.isin_no AS isin,
+            p.closing_balance AS value,
+            p.type AS category
+        FROM portfolios p
+        WHERE 
+            (
+                (%s = TRUE AND p.user_id = %s AND p.member_id IS NULL)
+                OR (p.member_id = ANY(%s))
+            )
+            AND (p.portfolio_id = (
+                SELECT MAX(portfolio_id)
+                FROM portfolios p2
+                WHERE p2.user_id = p.user_id
+                  AND COALESCE(p2.member_id, 0) = COALESCE(p.member_id, 0)
+            ))
+        ORDER BY p.user_id, p.member_id NULLS FIRST, p.fund_name;
+    """
+
+    cur.execute(query, (include_user, user_id, member_ids))
     holdings = cur.fetchall()
     cur.close()
     conn.close()
 
-    total = sum(float(h["value"] or 0) for h in holdings)
-    equity = sum(float(h["value"] or 0) for h in holdings if h["category"] == "Equity")
-    mf = sum(float(h["value"] or 0) for h in holdings if h["category"] == "Mutual Fund")
+    total = sum(float(h.get("value") or 0) for h in holdings)
+    equity = sum(float(h.get("value") or 0) for h in holdings if h.get("category") == "Equity")
+    mf = sum(float(h.get("value") or 0) for h in holdings if h.get("category") == "Mutual Fund")
 
     return jsonify({
         "total_value": total,
@@ -312,8 +358,8 @@ def dashboard_data():
         "mf_value": mf,
         "bonds_value": 0,
         "holdings": holdings,
+        "filters": {"user": include_user, "members": member_ids},
     }), 200
-
 
 # ---------- Portfolio Detail ----------
 @app.route("/portfolio/<int:portfolio_id>", methods=["GET"])
@@ -354,37 +400,154 @@ def portfolio_detail(portfolio_id):
 # ---------- History ----------
 @app.route("/history-data")
 def history_data():
+    """Return summary of all uploaded portfolios (user + family members)."""
     user_id = session.get("user_id")
     if not user_id:
         return jsonify({"error": "Unauthorized"}), 401
 
     conn = get_db_conn()
-    cur = conn.cursor()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    # ✅ Step 1: Find user's family_id
+    cur.execute("SELECT family_id FROM users WHERE user_id = %s", (user_id,))
+    family = cur.fetchone()
+    family_id = family["family_id"] if family else None
+    if not family_id:
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Family not found"}), 404
+
+    # ✅ Step 2: Fetch all portfolios belonging to user OR their family members
     cur.execute("""
-        SELECT portfolio_id, MAX(created_at) AS uploaded_at, COALESCE(SUM(closing_balance), 0) AS total_value
-        FROM portfolios
-        WHERE user_id = %s
-        GROUP BY portfolio_id
-        ORDER BY uploaded_at DESC, portfolio_id DESC
-    """, (user_id,))
+        SELECT 
+            p.portfolio_id,
+            MAX(p.created_at) AS uploaded_at,
+            COALESCE(SUM(p.closing_balance), 0) AS total_value
+        FROM portfolios p
+        LEFT JOIN family_members fm ON p.member_id = fm.id
+        LEFT JOIN users u ON p.user_id = u.user_id
+        WHERE (u.user_id = %s OR fm.family_id = %s)
+        GROUP BY p.portfolio_id
+        ORDER BY uploaded_at DESC, p.portfolio_id DESC
+    """, (user_id, family_id))
+    portfolio_rows = cur.fetchall()
+
+    # ✅ Step 3: For each portfolio, get member info (who contributed)
+    history = []
+    for r in portfolio_rows:
+        pid = r["portfolio_id"]
+        uploaded_at = r["uploaded_at"]
+        total = r["total_value"]
+        upload_date = uploaded_at.isoformat() if uploaded_at else None
+
+        # Find members who have data in this portfolio
+        cur.execute("""
+            SELECT DISTINCT 
+                COALESCE(fm.name, 'You') AS member_name
+            FROM portfolios p
+            LEFT JOIN family_members fm ON p.member_id = fm.id
+            LEFT JOIN users u ON p.user_id = u.user_id
+            WHERE p.portfolio_id = %s
+              AND (u.user_id = %s OR fm.family_id = %s)
+        """, (pid, user_id, family_id))
+        member_rows = cur.fetchall()
+        member_names = [m["member_name"] for m in member_rows]
+        member_count = len(member_names)
+
+        history.append({
+            "portfolio_id": int(pid),
+            "upload_date": upload_date,
+            "total_value": float(total or 0),
+            "member_count": member_count,
+            "members": member_names,
+        })
+
+    cur.close()
+    conn.close()
+    return jsonify(history), 200
+
+@app.route("/portfolio/<int:portfolio_id>/members", methods=["GET"])
+def portfolio_with_members(portfolio_id):
+    """
+    Returns all holdings (user + family members) for a specific historical portfolio_id.
+    Each entry includes summary + holdings grouped by member.
+    """
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    # ✅ Step 1: Get the user's family_id
+    cur.execute("SELECT family_id FROM users WHERE user_id = %s", (user_id,))
+    family = cur.fetchone()
+    family_id = family["family_id"] if family else None
+    if not family_id:
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Family not found"}), 404
+
+    # ✅ Step 2: Get all holdings for this portfolio_id (both user + family members)
+    cur.execute("""
+        SELECT 
+            p.member_id,
+            fm.name AS member_name,
+            p.fund_name AS company,
+            p.isin_no AS isin,
+            p.closing_balance AS value,
+            p.type AS category
+        FROM portfolios p
+        LEFT JOIN family_members fm ON p.member_id = fm.id
+        JOIN users u ON p.user_id = u.user_id
+        WHERE p.portfolio_id = %s 
+          AND (u.user_id = %s OR fm.family_id = %s)
+        ORDER BY p.member_id NULLS FIRST, p.fund_name
+    """, (portfolio_id, user_id, family_id))
+
     rows = cur.fetchall()
     cur.close()
     conn.close()
 
-    history = []
+    if not rows:
+        return jsonify({"error": "No holdings found for this portfolio"}), 404
+
+    # ✅ Step 3: Group holdings by member
+    grouped = {}
     for r in rows:
-        pid = r["portfolio_id"] if isinstance(r, dict) else r[0]
-        uploaded_at = r["uploaded_at"] if isinstance(r, dict) else r[1]
-        total = r["total_value"] if isinstance(r, dict) else r[2]
-        upload_date = uploaded_at.isoformat() if uploaded_at else None
-        history.append({
-            "portfolio_id": int(pid) if pid else None,
-            "upload_date": upload_date,
-            "total_value": float(total or 0),
+        member_id = r["member_id"]
+        member_name = r["member_name"] if r["member_name"] else "You"
+        if member_id not in grouped:
+            grouped[member_id] = {
+                "label": member_name,
+                "member_id": member_id,
+                "holdings": [],
+            }
+        grouped[member_id]["holdings"].append({
+            "company": r["company"],
+            "isin": r["isin"],
+            "value": float(r["value"] or 0),
+            "category": r["category"]
         })
 
-    return jsonify(history), 200
+    # ✅ Step 4: Summaries per member
+    results = []
+    for m_id, data in grouped.items():
+        holdings = data["holdings"]
+        total = sum(h["value"] for h in holdings)
+        equity = sum(h["value"] for h in holdings if h["category"] == "Equity")
+        mf = sum(h["value"] for h in holdings if h["category"] == "Mutual Fund")
+        results.append({
+            "label": data["label"],
+            "member_id": m_id,
+            "summary": {"total": total, "equity": equity, "mf": mf},
+            "holdings": holdings
+        })
 
+    return jsonify({
+        "portfolio_id": portfolio_id,
+        "members": results
+    }), 200
 
 # ---------- Delete Portfolio ----------
 @app.route("/delete-portfolio/<int:portfolio_id>", methods=["DELETE"])
@@ -417,29 +580,51 @@ def delete_portfolio(portfolio_id):
 # -----------------------------------------------------
 # FAMILY ROUTES
 # -----------------------------------------------------
+from flask import request, jsonify, session
+import os, traceback
+from werkzeug.utils import secure_filename
+from db import get_db_conn
+from ecasparser import process_ecas_file  # ensure you import your parser here
+
+UPLOAD_FOLDER = "uploads"  # adjust this path if needed
+
+from flask import request, jsonify, session
+from werkzeug.utils import secure_filename
+from psycopg2.extras import RealDictCursor
+import os, traceback
+from db import get_db_conn
+from ecasparser import process_ecas_file  # make sure this import exists
+
+UPLOAD_FOLDER = "uploads"  # adjust as needed
+
+
 @app.route("/upload-member", methods=["POST"])
 def upload_member_ecas():
+    """Upload ECAS PDF for a specific family member and store parsed holdings."""
     if "user_id" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
     user_id = session["user_id"]
-    family_member_id = request.form.get("member_id")
+    family_member_id = request.form.get("member_id", type=int)  # Must be family_members.id
     pdf_password = request.form.get("password")
     file = request.files.get("file")
 
     if not file or not family_member_id:
         return jsonify({"error": "File and member ID are required"}), 400
 
+    conn = None
+    cur = None
+
     try:
         conn = get_db_conn()
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=RealDictCursor)  # ✅ FIXED: RealDictCursor not dict
 
-        # ✅ Verify that member belongs to current user's family
+        # ✅ Step 1: Verify that the member belongs to the user's family
         cur.execute("""
-            SELECT fm.family_id 
+            SELECT fm.family_id
             FROM family_members fm
             JOIN users u ON u.family_id = fm.family_id
-            WHERE fm.member_id = %s AND u.user_id = %s
+            WHERE fm.id = %s AND u.user_id = %s
         """, (family_member_id, user_id))
         valid = cur.fetchone()
         if not valid:
@@ -447,41 +632,57 @@ def upload_member_ecas():
             conn.close()
             return jsonify({"error": "Unauthorized: member not in your family"}), 403
 
-        # ✅ Generate next portfolio_id for that member
+        # ✅ Step 2: Reuse SAME portfolio_id (latest) for this user
         cur.execute("""
-            SELECT COALESCE(MAX(portfolio_id), 0) + 1 AS next_id
+            SELECT MAX(portfolio_id) AS latest_portfolio
             FROM portfolios
-            WHERE member_id = %s
-        """, (family_member_id,))
-        next_row = cur.fetchone()
-        next_portfolio_id = next_row["next_id"] if isinstance(next_row, dict) else next_row[0]
+            WHERE user_id = %s
+        """, (user_id,))
+        result = cur.fetchone()
+        latest_portfolio_id = result["latest_portfolio"] if result and result["latest_portfolio"] else 1
+
         cur.close()
         conn.close()
 
-        # ✅ Save the uploaded file
+        # ✅ Step 3: Save uploaded file
         member_folder = os.path.join(UPLOAD_FOLDER, f"member_{family_member_id}")
         os.makedirs(member_folder, exist_ok=True)
-        from werkzeug.utils import secure_filename
-        file_path = os.path.join(member_folder, f"portfolio_{next_portfolio_id}_{secure_filename(file.filename)}")
+        file_path = os.path.join(
+            member_folder,
+            f"portfolio_{latest_portfolio_id}_{secure_filename(file.filename)}"
+        )
         file.save(file_path)
 
-        print(f"📄 Processing ECAS for member {family_member_id}, portfolio {next_portfolio_id}")
-        result = process_ecas_file(file_path, user_id, next_portfolio_id, pdf_password, member_id=family_member_id)
+        print(f"📄 Processing ECAS for user={user_id}, member_id={family_member_id}, portfolio={latest_portfolio_id}")
+
+        # ✅ Step 4: Parse and insert data (member_id now inserted properly)
+        result = process_ecas_file(
+            file_path=file_path,
+            user_id=user_id,
+            portfolio_id=latest_portfolio_id,
+            password=pdf_password,
+            member_id=family_member_id
+        )
 
         return jsonify({
             "message": "Member portfolio uploaded successfully",
             "member_id": family_member_id,
-            "portfolio_id": next_portfolio_id,
-            "total_value": result["total_value"],
-            "holdings_count": len(result["holdings"]),
+            "portfolio_id": latest_portfolio_id,
+            "total_value": result.get("total_value", 0),
+            "holdings_count": len(result.get("holdings", [])),
         }), 200
 
     except Exception as e:
         print("❌ Error uploading member ECAS:", e)
-        import traceback; traceback.print_exc()
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-import traceback
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
 
 @app.route("/family/add-member", methods=["POST"])
 def add_family_member():

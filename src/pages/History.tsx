@@ -1,13 +1,23 @@
 import { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Calendar, TrendingUp, Eye, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { PortfolioSnapshot } from '../pages/PortfolioSnapshot'; // ✅ dashboard modal
 
 interface HistoryItem {
   portfolio_id: number;
   upload_date: string;
   total_value: number;
+  member_count?: number;
+  members?: string[];
+}
+
+interface MemberPortfolioData {
+  label: string;
+  member_id: number | null;
+  summary: { total: number; equity: number; mf: number };
+  holdings: { company: string; isin: string; value: number; category: string }[];
 }
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
@@ -16,72 +26,68 @@ export const History = () => {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [memberPortfolios, setMemberPortfolios] = useState<MemberPortfolioData[]>([]);
+  const [isSnapshotOpen, setIsSnapshotOpen] = useState(false);
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<number | null>(null);
   const navigate = useNavigate();
 
-  // Fetch PMS upload history
+  // 🔹 Fetch history list
   useEffect(() => {
     const fetchHistory = async () => {
       try {
         setIsLoading(true);
-        const response = await fetch(`${API_BASE}/history-data`, {
-          method: 'GET',
-          credentials: 'include', // ✅ send Flask session cookie
-        });
-
-        if (response.status === 401) {
-          console.warn('⚠️ Unauthorized — redirecting to login');
-          navigate('/login');
-          return;
-        }
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to fetch history');
-        }
-
+        const res = await fetch(`${API_BASE}/history-data`, { credentials: 'include' });
+        if (res.status === 401) return navigate('/login');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch history');
         setHistory(Array.isArray(data) ? data : []);
       } catch (err) {
-        console.error('❌ Error fetching history:', err);
+        console.error('❌ History fetch error:', err);
         setError('Unable to load portfolio history. Please try again.');
       } finally {
         setIsLoading(false);
       }
     };
-
     fetchHistory();
   }, [navigate]);
 
-  // ✅ Delete portfolio
+  // 🔹 Delete portfolio
   const handleDelete = async (portfolioId: number) => {
-    const confirmDelete = window.confirm(
-      `Are you sure you want to delete portfolio #${portfolioId}? This action cannot be undone.`
-    );
-    if (!confirmDelete) return;
-
+    if (!window.confirm(`Delete portfolio #${portfolioId}?`)) return;
     try {
-      const response = await fetch(`${API_BASE}/delete-portfolio/${portfolioId}`, {
+      const res = await fetch(`${API_BASE}/delete-portfolio/${portfolioId}`, {
         method: 'DELETE',
         credentials: 'include',
       });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        alert(result.error || 'Failed to delete portfolio.');
-        return;
-      }
-
+      const result = await res.json();
+      if (!res.ok) return alert(result.error || 'Failed to delete portfolio.');
       alert('✅ Portfolio deleted successfully');
       setHistory((prev) => prev.filter((p) => p.portfolio_id !== portfolioId));
-    } catch (error) {
-      console.error('❌ Delete failed:', error);
+    } catch (err) {
+      console.error('❌ Delete failed:', err);
       alert('Network error. Please try again.');
     }
   };
 
-  // ---------- UI States ----------
-  if (isLoading) {
+  // 🔹 View portfolio snapshot
+  const handleViewSnapshot = async (portfolioId: number) => {
+    try {
+      const res = await fetch(`${API_BASE}/portfolio/${portfolioId}/members`, {
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load snapshot');
+      setMemberPortfolios(data.members || []);
+      setSelectedPortfolioId(portfolioId);
+      setIsSnapshotOpen(true);
+    } catch (err) {
+      console.error('❌ Snapshot load error:', err);
+      alert('Failed to load snapshot. Please try again.');
+    }
+  };
+
+  // ---------- UI ----------
+  if (isLoading)
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
@@ -89,32 +95,24 @@ export const History = () => {
         </div>
       </Layout>
     );
-  }
 
-  if (error) {
+  if (error)
     return (
       <Layout>
-        <div className="text-center text-red-600 mt-16 font-medium">
-          {error}
-        </div>
+        <div className="text-center text-red-600 mt-16 font-medium">{error}</div>
       </Layout>
     );
-  }
 
   return (
     <Layout>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
+        transition={{ duration: 0.4 }}
       >
         <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">
-            Portfolio History
-          </h1>
-          <p className="text-gray-600">
-            View, analyze, or delete your previous PMS uploads
-          </p>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">Portfolio History</h1>
+          <p className="text-gray-600">View, analyze, or delete previous PMS uploads</p>
         </div>
 
         {history.length === 0 ? (
@@ -123,12 +121,12 @@ export const History = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {history.map((item, index) => (
+            {history.map((item, i) => (
               <motion.div
                 key={item.portfolio_id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: index * 0.05 }}
+                transition={{ duration: 0.3, delay: i * 0.05 }}
                 className="bg-white rounded-2xl shadow-lg p-6 flex flex-col justify-between hover:shadow-xl transition-all"
               >
                 <div>
@@ -137,13 +135,11 @@ export const History = () => {
                     <span className="text-sm font-medium">Upload Date</span>
                   </div>
                   <p className="text-lg font-semibold text-gray-800 mb-4">
-                    {item.upload_date
-                      ? new Date(item.upload_date).toLocaleDateString('en-IN', {
-                          day: 'numeric',
-                          month: 'short',
-                          year: 'numeric',
-                        })
-                      : 'Unknown'}
+                    {new Date(item.upload_date).toLocaleDateString('en-IN', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                    })}
                   </p>
 
                   <div className="flex items-center gap-2 text-gray-500 mb-2">
@@ -156,11 +152,18 @@ export const History = () => {
                       maximumFractionDigits: 2,
                     })}
                   </p>
+
+                  {item.members?.length ? (
+                    <p className="text-sm text-gray-600">
+                      👨‍👩‍👧 {item.member_count} Member
+                      {item.member_count! > 1 ? 's' : ''}: {item.members.join(', ')}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="flex gap-2 mt-4">
                   <button
-                    onClick={() => navigate(`/portfolio/${item.portfolio_id}`)}
+                    onClick={() => handleViewSnapshot(item.portfolio_id)}
                     className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white font-medium py-2 rounded-lg hover:bg-blue-700 active:scale-95 transition-all"
                   >
                     <Eye size={18} /> View
@@ -178,6 +181,17 @@ export const History = () => {
           </div>
         )}
       </motion.div>
+
+      {/* 🟦 Snapshot Dashboard Modal */}
+      <AnimatePresence>
+        {isSnapshotOpen && selectedPortfolioId && memberPortfolios.length > 0 && (
+          <PortfolioSnapshot
+            portfolioId={selectedPortfolioId}
+            members={memberPortfolios}
+            onClose={() => setIsSnapshotOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </Layout>
   );
 };
