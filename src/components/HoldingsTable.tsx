@@ -3,11 +3,15 @@ import { Search, ArrowUpDown } from 'lucide-react';
 
 // ✅ Exported so Dashboard can import the same type
 export interface Holding {
-  company: string;
-  isin: string;
+  company?: string;
+  isin?: string;
   quantity?: number; // optional → backend doesn’t have to send it
-  value: number;
-  category: string;
+  value?: number;
+  category?: string;
+  type?: string;
+  scheme_type?: string;
+  amc?: string;
+  invested_amount?: number;
 }
 
 interface HoldingsTableProps {
@@ -32,35 +36,45 @@ export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
   };
 
   const filteredAndSortedHoldings = useMemo(() => {
-    let filtered = holdings.filter(
-      (holding) =>
-        holding.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        holding.isin.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        holding.category.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    let filtered = holdings.filter((holding) => {
+      const company = (holding.company ?? '').toLowerCase();
+      const isin = (holding.isin ?? '').toLowerCase();
+      const category = (holding.category ?? '').toLowerCase();
+      const term = searchTerm.toLowerCase();
+
+      return (
+        company.includes(term) || isin.includes(term) || category.includes(term)
+      );
+    });
 
     filtered.sort((a, b) => {
-      let aVal: string | number = a[sortField];
-      let bVal: string | number = b[sortField];
+      const aVal = (a[sortField] ?? '') as string | number;
+      const bVal = (b[sortField] ?? '') as string | number;
 
-      if (typeof aVal === 'string') {
-        aVal = aVal.toLowerCase();
-        bVal = (bVal as string).toLowerCase();
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return sortDirection === 'asc'
+          ? aVal.localeCompare(bVal)
+          : bVal.localeCompare(aVal);
       }
 
-      if (sortDirection === 'asc') {
-        return aVal > bVal ? 1 : -1;
-      } else {
-        return aVal < bVal ? 1 : -1;
-      }
+      const aNum = Number(aVal) || 0;
+      const bNum = Number(bVal) || 0;
+
+      return sortDirection === 'asc' ? aNum - bNum : bNum - aNum;
     });
 
     return filtered;
   }, [holdings, searchTerm, sortField, sortDirection]);
 
+  const fmtCurrency = (n?: number) =>
+    n !== undefined && !isNaN(n)
+      ? `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+      : '-';
+
   return (
-    <div className="bg-white rounded-xl shadow-md p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <h3 className="text-lg font-semibold text-gray-800">Holdings</h3>
         <div className="relative">
           <Search
@@ -72,22 +86,23 @@ export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
             placeholder="Search holdings..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           />
         </div>
       </div>
 
+      {/* Table */}
       <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
+        <table className="min-w-full border-collapse">
+          <thead className="bg-gray-50">
             <tr className="border-b border-gray-200">
               <th
-                className="text-left py-3 px-4 font-medium text-gray-700 cursor-pointer hover:bg-gray-50"
+                className="text-left py-3 px-4 font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('company')}
               >
                 <div className="flex items-center gap-2">
                   Company
-                  <ArrowUpDown size={16} />
+                  <ArrowUpDown size={14} />
                 </div>
               </th>
               <th className="text-left py-3 px-4 font-medium text-gray-700">ISIN</th>
@@ -95,21 +110,21 @@ export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
                 Quantity
               </th>
               <th
-                className="text-right py-3 px-4 font-medium text-gray-700 cursor-pointer hover:bg-gray-50"
+                className="text-right py-3 px-4 font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('value')}
               >
                 <div className="flex items-center justify-end gap-2">
                   Value
-                  <ArrowUpDown size={16} />
+                  <ArrowUpDown size={14} />
                 </div>
               </th>
               <th
-                className="text-left py-3 px-4 font-medium text-gray-700 cursor-pointer hover:bg-gray-50"
+                className="text-left py-3 px-4 font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('category')}
               >
                 <div className="flex items-center gap-2">
                   Category
-                  <ArrowUpDown size={16} />
+                  <ArrowUpDown size={14} />
                 </div>
               </th>
             </tr>
@@ -124,32 +139,38 @@ export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
             ) : (
               filteredAndSortedHoldings.map((holding, index) => (
                 <tr
-                  key={holding.isin}
+                  key={holding.isin ?? index}
                   className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
                     index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
                   }`}
                 >
                   <td className="py-3 px-4 font-medium text-gray-800">
-                    {holding.company}
+                    {holding.company || 'Unknown'}
                   </td>
-                  <td className="py-3 px-4 text-gray-600 text-sm">{holding.isin}</td>
+                  <td className="py-3 px-4 text-gray-600 text-sm">
+                    {holding.isin || '-'}
+                  </td>
                   <td className="py-3 px-4 text-right text-gray-700">
                     {holding.quantity ?? '-'}
                   </td>
                   <td className="py-3 px-4 text-right font-medium text-gray-800">
-                    ₹{holding.value.toLocaleString()}
+                    {fmtCurrency(holding.value)}
                   </td>
                   <td className="py-3 px-4">
                     <span
                       className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                        holding.category === 'Equity'
+                        (holding.category || '').toLowerCase().includes('equity')
                           ? 'bg-blue-100 text-blue-700'
-                          : holding.category === 'Mutual Fund'
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-orange-100 text-orange-700'
+                          : (holding.category || '').toLowerCase().includes('debt')
+                          ? 'bg-yellow-100 text-yellow-700'
+                          : (holding.category || '').toLowerCase().includes('hybrid')
+                          ? 'bg-purple-100 text-purple-700'
+                          : (holding.category || '').toLowerCase().includes('gold')
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-gray-100 text-gray-700'
                       }`}
                     >
-                      {holding.category}
+                      {holding.category || '—'}
                     </span>
                   </td>
                 </tr>

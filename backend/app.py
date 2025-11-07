@@ -285,14 +285,19 @@ def upload_ecas():
 
 
 # ---------- Dashboard Data ----------
+from flask import jsonify, request, session
+from psycopg2.extras import RealDictCursor
+from db import get_db_conn
+
+
 @app.route("/dashboard-data")
 def dashboard_data():
     """
-    Returns combined dashboard data:
-      - For the logged-in user (if include_user=true)
-      - For selected family members (?members=1,2,3)
-      - Each member automatically gets their latest portfolio
-        (or falls back to older ones if newer not uploaded)
+    Returns enriched dashboard data for the user + selected members:
+      - Total invested, current value, profit/loss
+      - Model asset allocation (Equity, Debt, Hybrid, Gold)
+      - Top AMCs and Top Categories
+      - Detailed Holdings
     """
 
     user_id = session.get("user_id")
@@ -306,10 +311,15 @@ def dashboard_data():
     # If no user or member selected
     if not include_user and not member_ids:
         return jsonify({
-            "total_value": 0,
-            "equity_value": 0,
-            "mf_value": 0,
-            "bonds_value": 0,
+            "summary": {
+                "total_invested": 0,
+                "current_value": 0,
+                "profit": 0,
+                "profit_percent": 0
+            },
+            "asset_allocation": [],
+            "top_amc": [],
+            "top_category": [],
             "holdings": [],
             "filters": {"user": False, "members": []},
         }), 200
@@ -317,49 +327,232 @@ def dashboard_data():
     conn = get_db_conn()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    # ✅ Get the latest portfolio per user/member
-    # The subquery picks the MAX(portfolio_id) for each (user_id, member_id)
+    # ✅ Get only the latest portfolios for each user/member
     query = """
         SELECT 
             p.user_id,
             p.member_id,
             p.portfolio_id,
-            p.fund_name AS company,
-            p.isin_no AS isin,
-            p.closing_balance AS value,
-            p.type AS category
+            p.fund_name,
+            p.isin_no,
+            p.units,
+            p.nav,
+            p.invested_amount,
+            p.valuation,
+            p.type,
+            p.category,
+            p.sub_category,
+            p.created_at
         FROM portfolios p
         WHERE 
             (
                 (%s = TRUE AND p.user_id = %s AND p.member_id IS NULL)
                 OR (p.member_id = ANY(%s))
             )
-            AND (p.portfolio_id = (
+            AND p.portfolio_id = (
                 SELECT MAX(portfolio_id)
                 FROM portfolios p2
                 WHERE p2.user_id = p.user_id
                   AND COALESCE(p2.member_id, 0) = COALESCE(p.member_id, 0)
-            ))
-        ORDER BY p.user_id, p.member_id NULLS FIRST, p.fund_name;
+            );
     """
 
     cur.execute(query, (include_user, user_id, member_ids))
     holdings = cur.fetchall()
+
+    # -------------------------------------------------
+    # If no holdings, return empty structure
+    # -------------------------------------------------
+    if not holdings:
+        cur.close()
+        conn.close()
+        return jsonify({
+            "summary": {
+                "total_invested": 0,
+                "current_value": 0,
+                "profit": 0,
+                "profit_percent": 0
+            },
+            "asset_allocation": [],
+            "top_amc": [],
+            "top_category": [],
+            "holdings": [],
+            "filters": {"user": include_user, "members": member_ids},
+        }), 200
+
+    # -------------------------------------------------
+    # CALCULATE TOTALS
+    # -------------------------------------------------
+    total_invested = sum(float(h.get("invested_amount") or 0) for h in holdings)
+    total_value = sum(float(h.get("valuation") or 0) for h in holdings)
+    profit = total_value - total_invested
+    profit_percent = (profit / total_invested * 100) if total_invested > 0 else 0
+
+    # -------------------------------------------------
+    # MODEL ASSET ALLOCATION
+    # -------------------------------------------------
+    asset_summary = {}
+    for h in holdings:
+        cat = h.get("category") or "Others"
+        val = float(h.get("valuation") or 0)
+        asset_summary[cat] = asset_summary.get(cat, 0) + val
+
+    asset_allocation = []
+    for cat, val in asset_summary.items():
+        pct = (val / total_value * 100) if total_value > 0 else 0
+        asset_allocation.append({
+            "category": cat,
+            "value": round(val, 2),
+            "percentage": round(pct, 2)
+        })
+
+    asset_allocation.sort(key=lambda x: x["value"], reverse=True)
+
+    # -------------------------------------------------
+    # TOP 10 AMCs — robust name detection + grouping
+    # -------------------------------------------------
+    amc_summary = {}
+
+    junk_terms = [
+        "DIRECT PLAN", "DIRECT GROWTH", "PLAN GROWTH", "GROWTH PLAN", "PLAN- GROWTH",
+        "GROWTH OPTION", "GROWTH", "IDCW", "DIR GR", "DIRECT PLAN-GROWTH",
+        "EQUITY SHARES", "PLAN", "OPTION", "REGULAR DIRECT", "TERMS", "INR", "LIMITED",
+        "SCHEME", "FUND MANAGEMENT", "#"
+    ]
+
+    stop_words = {
+        "SMALL", "CAP", "LARGE", "MID", "OPPORTUNITIES", "OPPORTUNITY", "YIELD",
+        "STRATEGY", "COMMODITIES", "INFRASTRUCTURE", "SERVICES", "BFSI",
+        "DIVIDEND", "CONSUMPTION", "ESG", "BANKING", "FINANCIAL", "FLEXI",
+        "FLEXI CAP", "FLEXI-CAP"
+    }
+
+    known_amcs = [
+        "MIRAE ASSET", "ICICI PRUDENTIAL", "ADITYA BIRLA", "NIPPON INDIA",
+        "SBI", "HDFC", "AXIS", "KOTAK", "DSP", "TATA", "MOTILAL OSWAL",
+        "BANDHAN", "QUANT", "UTI", "FRANKLIN", "PGIM", "PARAG PARIKH",
+        "INVESCO", "NIPPON", "MIRAE", "JM", "SUNDARAM", "IDFC", "CANARA ROBECO"
+    ]
+    known_amcs = sorted([k.upper() for k in known_amcs], key=lambda x: -len(x))
+
+    def extract_amc_name(fund_name: str) -> str:
+        """Robust AMC extraction with multiple fallbacks"""
+        if not fund_name:
+            return "OTHERS"
+
+        text = fund_name.upper().strip()
+        for junk in junk_terms:
+            text = text.replace(junk, "")
+        text = text.strip()
+
+        candidate_sections = []
+        if "-" in text:
+            candidate_sections.append(text.split("-", 1)[1].strip())
+        candidate_sections.append(text)
+
+        for section in candidate_sections:
+            for known in known_amcs:
+                if section.startswith(known) or f" {known} " in f" {section} ":
+                    return known
+
+        for section in candidate_sections:
+            words = section.split()
+            if "FUND" in words:
+                idx = words.index("FUND")
+                for take in (2, 1):
+                    if idx - take >= 0:
+                        candidate = " ".join(words[idx - take:idx]).strip()
+                        cand_clean = candidate.replace("&", "").replace(",", "").strip()
+                        for known in known_amcs:
+                            if cand_clean.startswith(known):
+                                return known
+                        tokens = [t for t in cand_clean.split() if t.isalpha()]
+                        if tokens and all(tok not in stop_words for tok in tokens):
+                            return " ".join(tokens).upper()
+
+        for section in candidate_sections:
+            tokens = [t for t in section.replace(",", " ").split() if t.isalpha()]
+            for known in known_amcs:
+                known_tokens = known.split()
+                for i in range(len(tokens) - len(known_tokens) + 1):
+                    if tokens[i:i+len(known_tokens)] == known_tokens:
+                        return known
+
+        for section in candidate_sections:
+            tokens = [t for t in section.split() if t.isalpha()]
+            for t in tokens:
+                if t not in stop_words and len(t) > 1:
+                    return t.upper()
+
+        return "OTHERS"
+
+    for h in holdings:
+        fund_name = h.get("fund_name") or ""
+        val = float(h.get("valuation") or 0)
+        amc = extract_amc_name(fund_name)
+        if val <= 0:
+            continue
+        amc_summary[amc] = amc_summary.get(amc, 0) + val
+
+    top_amc = sorted(
+        [{"amc": k, "value": round(v, 2)} for k, v in amc_summary.items()],
+        key=lambda x: x["value"],
+        reverse=True
+    )[:10]
+
+    # -------------------------------------------------
+    # TOP 10 CATEGORIES (by sub_category)
+    # -------------------------------------------------
+    subcat_summary = {}
+    for h in holdings:
+        sub = h.get("sub_category") or "Unclassified"
+        val = float(h.get("valuation") or 0)
+        subcat_summary[sub] = subcat_summary.get(sub, 0) + val
+
+    top_category = sorted(
+        [{"category": k, "value": round(v, 2)} for k, v in subcat_summary.items()],
+        key=lambda x: x["value"],
+        reverse=True
+    )[:10]
+
+    # -------------------------------------------------
+    # CLEAN HOLDINGS FOR FRONTEND
+    # -------------------------------------------------
+    clean_holdings = []
+    for h in holdings:
+        qty = float(h.get("units") or 0)
+        clean_holdings.append({
+            "company": h.get("fund_name") or "Unknown Fund",
+            "isin": h.get("isin_no") or "-",
+            "category": h.get("category") or "N/A",
+            "sub_category": h.get("sub_category") or "N/A",
+            "quantity": qty if qty > 0 else "-",  # ✅ FIXED: renamed from units → quantity
+            "nav": float(h.get("nav") or 0),
+            "invested_amount": float(h.get("invested_amount") or 0),
+            "value": float(h.get("valuation") or 0),
+            "type": h.get("type") or "N/A",
+        })
+
     cur.close()
     conn.close()
 
-    total = sum(float(h.get("value") or 0) for h in holdings)
-    equity = sum(float(h.get("value") or 0) for h in holdings if h.get("category") == "Equity")
-    mf = sum(float(h.get("value") or 0) for h in holdings if h.get("category") == "Mutual Fund")
-
+    # -------------------------------------------------
+    # FINAL RESPONSE
+    # -------------------------------------------------
     return jsonify({
-        "total_value": total,
-        "equity_value": equity,
-        "mf_value": mf,
-        "bonds_value": 0,
-        "holdings": holdings,
+        "summary": {
+            "total_invested": round(total_invested, 2),
+            "current_value": round(total_value, 2),
+            "profit": round(profit, 2),
+            "profit_percent": round(profit_percent, 2)
+        },
+        "asset_allocation": asset_allocation,
+        "top_amc": top_amc,
+        "top_category": top_category,
+        "holdings": clean_holdings,
         "filters": {"user": include_user, "members": member_ids},
     }), 200
+
 
 # ---------- Portfolio Detail ----------
 @app.route("/portfolio/<int:portfolio_id>", methods=["GET"])
@@ -371,7 +564,7 @@ def portfolio_detail(portfolio_id):
     conn = get_db_conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT fund_name AS company, isin_no AS isin, closing_balance AS value, type AS category
+        SELECT fund_name AS company, isin_no AS isin, valuation AS value, type AS category
         FROM portfolios
         WHERE user_id = %s AND portfolio_id = %s
         ORDER BY fund_name
@@ -422,7 +615,7 @@ def history_data():
         SELECT 
             p.portfolio_id,
             MAX(p.created_at) AS uploaded_at,
-            COALESCE(SUM(p.closing_balance), 0) AS total_value
+            COALESCE(SUM(p.valuation), 0) AS total_value
         FROM portfolios p
         LEFT JOIN family_members fm ON p.member_id = fm.id
         LEFT JOIN users u ON p.user_id = u.user_id
@@ -495,7 +688,7 @@ def portfolio_with_members(portfolio_id):
             fm.name AS member_name,
             p.fund_name AS company,
             p.isin_no AS isin,
-            p.closing_balance AS value,
+            p.valuation AS value,
             p.type AS category
         FROM portfolios p
         LEFT JOIN family_members fm ON p.member_id = fm.id
@@ -802,7 +995,7 @@ def family_dashboard():
         cur.execute("""
             SELECT 
                 p.fund_name,
-                p.closing_balance,
+                p.valuation,
                 p.isin_no,
                 COALESCE(fm.name, 'You') AS member_name
             FROM portfolios p
@@ -814,12 +1007,12 @@ def family_dashboard():
         cur.close()
         conn.close()
 
-        total_value = sum(float(r["closing_balance"] if isinstance(r, dict) else r[1] or 0) for r in rows)
+        total_value = sum(float(r["valuation"] if isinstance(r, dict) else r[1] or 0) for r in rows)
         holdings = [
             {
                 "fund_name": r["fund_name"] if isinstance(r, dict) else r[0],
                 "isin": r["isin_no"] if isinstance(r, dict) else r[2],
-                "value": float(r["closing_balance"] if isinstance(r, dict) else r[1] or 0),
+                "value": float(r["valuation"] if isinstance(r, dict) else r[1] or 0),
                 "member_name": r["member_name"] if isinstance(r, dict) else r[3],
             }
             for r in rows
@@ -865,7 +1058,7 @@ def family_member_dashboard(member_id):
             SELECT 
                 fund_name,
                 isin_no,
-                closing_balance,
+                valuation,
                 type
             FROM portfolios
             WHERE member_id = %s
@@ -887,11 +1080,11 @@ def family_member_dashboard(member_id):
             }), 200
 
         # Calculate totals
-        total_value = sum(float(h["closing_balance"] if isinstance(h, dict) else h[2] or 0) for h in holdings)
-        equity = sum(float(h["closing_balance"] if isinstance(h, dict) and h["type"] == "Equity"
+        total_value = sum(float(h["valuation"] if isinstance(h, dict) else h[2] or 0) for h in holdings)
+        equity = sum(float(h["valuation"] if isinstance(h, dict) and h["type"] == "Equity"
                             else (h[2] if len(h) > 3 and h[3] == "Equity" else 0))
                      for h in holdings)
-        mf = sum(float(h["closing_balance"] if isinstance(h, dict) and h["type"] == "Mutual Fund"
+        mf = sum(float(h["valuation"] if isinstance(h, dict) and h["type"] == "Mutual Fund"
                         else (h[2] if len(h) > 3 and h[3] == "Mutual Fund" else 0))
                  for h in holdings)
 
@@ -899,7 +1092,7 @@ def family_member_dashboard(member_id):
             {
                 "fund_name": h["fund_name"] if isinstance(h, dict) else h[0],
                 "isin_no": h["isin_no"] if isinstance(h, dict) else h[1],
-                "closing_balance": float(h["closing_balance"] if isinstance(h, dict) else h[2] or 0),
+                "valuation": float(h["valuation"] if isinstance(h, dict) else h[2] or 0),
                 "category": h["type"] if isinstance(h, dict) else (h[3] if len(h) > 3 else None),
             }
             for h in holdings
