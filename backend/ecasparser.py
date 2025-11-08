@@ -1,11 +1,12 @@
 import re
+import unicodedata
 import fitz  # PyMuPDF
 from typing import List, Dict, Tuple
 from db import get_db_conn
 
 
 # -----------------------------------------------------
-# PDF TEXT EXTRACTION
+# PDF TEXT EXTRACTIONX
 # -----------------------------------------------------
 def extract_blocks_text(file_path: str, password: str | None = None) -> str:
     """Extract text from PDF preserving layout and stripping non-ASCII."""
@@ -147,11 +148,50 @@ def parse_ecas_text(text: str) -> Tuple[List[Dict], float]:
 
     for m in mf_pattern.finditer(text):
         fund_name, isin, units, nav, invested, valuation = m.groups()
+        fund_name = unicodedata.normalize("NFKC", fund_name)
+        fund_name = re.sub(r"[\u00A0\u200B\u200C\u200D\uFEFF]", " ", fund_name)  # invisible spaces
+        fund_name = re.sub(r"[–—−]", "-", fund_name)                             # fancy hyphens → normal
+        fund_name = re.sub(r"[^\x20-\x7E]", "", fund_name)                       # strip non-printables
 
-        fund_name = re.sub(r"^[\s\)\(\-_:;|.,#']*(?:\d+\s*|Profit/Loss\s*INR\)?\s*)*", "", fund_name.strip())
-        fund_name = re.sub(r"^(?:[A-Z]\s*[-]\s+|[-,:;|.]\s+)+", "", fund_name)
-        fund_name = re.sub(r"[\s\-\(\):;|.,#']+$", "", fund_name)
+        # --- Join multi-line fund names ---
+        fund_name = re.sub(r"\s*\n\s*", " ", fund_name)
         fund_name = re.sub(r"\s{2,}", " ", fund_name).strip()
+
+        # --- If there's a ')' followed by a word, remove everything before that ')' ---
+        # Example: ") Regular Direct terms - in INR) D464D - SBI..." → "D464D - SBI..."
+        fund_name = re.sub(r"^[^)]*\)\s*(?=\w)", "", fund_name)
+
+        # --- Remove known ECAS prefixes like "Regular Direct terms - in INR)" ---
+        fund_name = re.sub(
+            r"""(?ix)
+            ^\s*
+            (?:regular\s+direct\s*terms?|
+            regular\s*terms?|
+            direct\s*terms?|
+            regular\s+direct|
+            regular|
+            direct)
+            \s*[-:;()]*\s*
+            (?:in\s*inr\)*)?
+            \s*
+            """,
+            "",
+            fund_name.strip()
+        )
+        fund_name = re.sub(
+            r"(?i)^\s*profit\s*/?\s*loss\s*inr\)?\s*",
+            "",
+            fund_name.strip()
+        )
+
+        # --- Remove leading row numbers but keep scheme codes (e.g., '48 D033 -' -> 'D033 -') ---
+        fund_name = re.sub(r"^\s*\d{1,3}\s+([A-Z0-9]{2,10}\s*-)", r"\1", fund_name)
+
+        # --- Final cleanup for punctuation and spaces ---
+        fund_name = re.sub(r"^[\s\-\:\;\,\|\.#']+", "", fund_name)
+        fund_name = re.sub(r"[\s\-\:\;\,\|\.#']+$", "", fund_name)
+        fund_name = re.sub(r"\s{2,}", " ", fund_name).strip()
+
 
         category, sub_category = classify_instrument(fund_name)
 
@@ -169,31 +209,65 @@ def parse_ecas_text(text: str) -> Tuple[List[Dict], float]:
 
     # ----------- EQUITIES -----------
     eq_pattern = re.compile(
-        r"(INE[0-9A-Z]{9})\s+([A-Z0-9#&\-\s]+?)\s+(?:[\d\.\-]+\s+){2,6}([\d,]+\.\d+)",
+        # Works for ISIN-first ECAS with multiple numeric columns (like yours)
+        r"(INE[0-9A-Z]{9})\s+([A-Za-z0-9#&\-\(\)\.,\s]+?)"
+        r"\s+(?:[\d\.\-]+\s+){0,6}?([\d,]+\.\d+)\s+([\d,]+\.\d+)\s+([\d,]+\.\d+)",
         re.IGNORECASE,
     )
 
     for m in eq_pattern.finditer(text):
-        isin, company, value = m.groups()
+        try:
+            isin, company, units, nav, value = m.groups()
+        except ValueError:
+            print(f"⚠️ Skipping malformed equity line: {m.groups()}")
+            continue
+
+        # Skip footer lines like "Portfolio Value ₹ ..."
+        if "portfolio value" in company.lower():
+            continue
+
+        # --- Clean company name ---
         company = re.sub(r"^[\s\)\(\-_:;|.,#']+", "", company.strip())
         company = re.sub(r"[\s\-\(\):;|.,#']+$", "", company)
         company = re.sub(r"\s{2,}", " ", company).strip()
 
-        category, sub_category = classify_instrument(company)
+        # --- Classify safely ---
+        category, sub_category = classify_instrument(company) or (None, None)
+
+        # --- Convert numeric fields ---
+        def to_float(x):
+            try:
+                return float(str(x).replace(",", "").strip())
+            except ValueError:
+                return 0.0
+
+        units_f = to_float(units)
+        nav_f = to_float(nav)
+        value_f = to_float(value)
+
+        # ✅ Detect & fix misassigned NAV/Value
+        # If nav_f * units_f ≈ value_f (within 2%), it's correct.
+        # If nav_f > value_f, then value and nav were swapped in parsing.
+        if nav_f > value_f:
+            nav_f, value_f = value_f, nav_f
+
+        # ✅ If valuation seems 0 but we have units and nav, compute it
+        if not value_f and units_f and nav_f:
+            value_f = units_f * nav_f
 
         holdings.append({
             "type": "Equity",
             "fund_name": company,
             "isin_no": isin.strip(),
-            "units": 0.0,
-            "nav": 0.0,
+            "units": units_f,
+            "nav": nav_f,
             "invested_amount": 0.0,
-            "valuation": float(str(value).replace(",", "").strip()),
+            "valuation": value_f,
             "category": category,
             "sub_category": sub_category,
         })
 
-    # Normalize
+    # --- Normalize ---
     for h in holdings:
         h["isin_no"] = h["isin_no"].strip().upper()
         h["fund_name"] = re.sub(r"\s{2,}", " ", h.get("fund_name", "").strip())
@@ -201,11 +275,12 @@ def parse_ecas_text(text: str) -> Tuple[List[Dict], float]:
     print("\n🔍 Parsed holdings with categories:")
     for h in holdings:
         print(
-            f"{h['fund_name']:<50} | ISIN={h['isin_no']} | Units={h['units']} | "
-            f"Invested={h['invested_amount']} | Value={h['valuation']} | "
+            f"{h['fund_name']:<55} | ISIN={h['isin_no']} | Units={h['units']} | "
+            f"NAV={h['nav']} | Value={h['valuation']} | "
             f"Cat={h['category']} | Sub={h['sub_category']}"
         )
 
+    total_value = sum(h["valuation"] for h in holdings if h["type"] == "Equity")
     return holdings, total_value
 
 

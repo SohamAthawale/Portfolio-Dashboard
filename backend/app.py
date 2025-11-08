@@ -32,7 +32,7 @@ app.config.update(
     SESSION_PERMANENT=True,              # keep session active across restarts
     SESSION_USE_SIGNER=True,             # adds extra security
     SESSION_COOKIE_NAME="pms_session",   # custom cookie name
-    SESSION_COOKIE_SAMESITE="None",      # allow cross-origin (React <-> Flask)
+    SESSION_COOKIE_SAMESITE="Lax",      # allow cross-origin (React <-> Flask)
     SESSION_COOKIE_SECURE=False,         # only True if you serve via HTTPS
 )
 
