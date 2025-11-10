@@ -30,10 +30,12 @@ import { ValueType, NameType } from 'recharts/types/component/DefaultTooltipCont
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
 
 interface DashboardSummary {
-  total_invested: number;
-  current_value: number;
-  profit: number;
-  profit_percent: number;
+  invested_value_mf: number;
+  current_value_mf: number;
+  profit_mf: number;
+  profit_percent_mf: number;
+  equity_value: number;
+  total_portfolio_value: number;
 }
 
 interface DashboardData {
@@ -153,11 +155,40 @@ export const Dashboard = () => {
 
   const { summary, asset_allocation, top_amc, top_category, holdings } = data;
 
+  // ✅ Updated: merged “Current Value” cards
   const summaryCards = [
-    { title: 'Invested Value', value: summary.total_invested, icon: Wallet, color: 'green' },
-    { title: 'Current Value', value: summary.current_value, icon: TrendingUp, color: 'blue' },
-    { title: 'Profit / Loss', value: summary.profit, icon: Briefcase, color: summary.profit >= 0 ? 'green' : 'red' },
-    { title: 'Return %', value: summary.profit_percent, icon: PieChartIcon, color: 'purple' },
+    {
+      title: 'Invested Value (MF)',
+      value: summary.invested_value_mf,
+      icon: Wallet,
+      color: 'green',
+    },
+    {
+      title: 'Current Value (Total)',
+      value: summary.total_portfolio_value,
+      subValue: summary.current_value_mf,
+      subLabel: 'MF',
+      icon: TrendingUp,
+      color: 'blue',
+    },
+    {
+      title: 'Profit (MF)',
+      value: summary.profit_mf,
+      icon: Briefcase,
+      color: summary.profit_mf >= 0 ? 'green' : 'red',
+    },
+    {
+      title: 'Return % (MF)',
+      value: summary.profit_percent_mf,
+      icon: PieChartIcon,
+      color: 'purple',
+    },
+    {
+      title: 'Shares Value',
+      value: summary.equity_value,
+      icon: Wallet,
+      color: 'amber',
+    },
   ];
 
   const selectedText =
@@ -179,6 +210,7 @@ export const Dashboard = () => {
             )}
           </div>
 
+          {/* Member Filter Dropdown */}
           <div className="relative inline-block text-left" ref={dropdownRef}>
             <button
               onClick={() => setDropdownOpen((prev) => !prev)}
@@ -220,11 +252,16 @@ export const Dashboard = () => {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
           {summaryCards.map((card, i) => {
             const Icon = card.icon;
             return (
-              <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.1 }}
+              >
                 <div className="bg-white rounded-xl shadow p-6">
                   <div className="flex items-center justify-between mb-3">
                     <div className="p-3 rounded-lg bg-gray-100">
@@ -233,10 +270,15 @@ export const Dashboard = () => {
                   </div>
                   <h3 className="text-sm font-medium text-gray-600 mb-1">{card.title}</h3>
                   <p className="text-2xl font-bold text-gray-800">
-                    {card.title === 'Return %'
+                    {card.title.includes('%')
                       ? `${card.value.toFixed(2)}%`
                       : `₹${card.value.toLocaleString('en-IN')}`}
                   </p>
+                  {card.subValue !== undefined && (
+                    <p className="text-sm text-gray-500 mt-1">
+                      ({card.subLabel}: ₹{card.subValue.toLocaleString('en-IN')})
+                    </p>
+                  )}
                 </div>
               </motion.div>
             );
@@ -245,7 +287,7 @@ export const Dashboard = () => {
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 2xl:grid-cols-2 gap-8">
-          {/* Donut Chart */}
+          {/* Model Asset Allocation */}
           <div className="bg-white rounded-xl shadow p-6 flex flex-col items-center justify-center">
             <h3 className="text-lg font-semibold text-gray-700 mb-4 self-start">
               Model Asset Allocation
@@ -267,7 +309,6 @@ export const Dashboard = () => {
                       return `${name}: ${percent}%`;
                     }}
                   >
-
                     {asset_allocation.map((_, i) => (
                       <Cell key={i} fill={COLORS[i % COLORS.length]} />
                     ))}
@@ -281,7 +322,7 @@ export const Dashboard = () => {
                     dominantBaseline="middle"
                     className="text-lg font-semibold fill-gray-700"
                   >
-                    ₹{summary.current_value.toLocaleString('en-IN')}
+                    ₹{summary.total_portfolio_value.toLocaleString('en-IN')}
                   </text>
 
                   <Tooltip
@@ -298,7 +339,7 @@ export const Dashboard = () => {
             </div>
           </div>
 
-          {/* Right Column: Bar Charts */}
+          {/* Right Column: Top AMC + Categories */}
           <div className="flex flex-col gap-8">
             {/* Top 10 AMC */}
             <div className="bg-white rounded-xl shadow p-6 flex-1">
@@ -319,6 +360,7 @@ export const Dashboard = () => {
                       width={150}
                       tickLine={false}
                       axisLine={false}
+                      interval={0}
                       tick={({ x, y, payload }) => (
                         <text
                           x={x - 10}
@@ -371,9 +413,10 @@ export const Dashboard = () => {
                     <YAxis
                       dataKey="category"
                       type="category"
-                      width={150}
+                      width={160}
                       tickLine={false}
                       axisLine={false}
+                      interval={0}
                       tick={({ x, y, payload }) => (
                         <text
                           x={x - 10}

@@ -312,10 +312,12 @@ def dashboard_data():
     if not include_user and not member_ids:
         return jsonify({
             "summary": {
-                "total_invested": 0,
-                "current_value": 0,
-                "profit": 0,
-                "profit_percent": 0
+                "invested_value_mf": 0,
+                "current_value_mf": 0,
+                "profit_mf": 0,
+                "profit_percent_mf": 0,
+                "equity_value": 0,
+                "total_portfolio_value": 0
             },
             "asset_allocation": [],
             "top_amc": [],
@@ -323,6 +325,7 @@ def dashboard_data():
             "holdings": [],
             "filters": {"user": False, "members": []},
         }), 200
+
 
     conn = get_db_conn()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -383,10 +386,29 @@ def dashboard_data():
     # -------------------------------------------------
     # CALCULATE TOTALS
     # -------------------------------------------------
-    total_invested = sum(float(h.get("invested_amount") or 0) for h in holdings)
-    total_value = sum(float(h.get("valuation") or 0) for h in holdings)
-    profit = total_value - total_invested
-    profit_percent = (profit / total_invested * 100) if total_invested > 0 else 0
+    mf_invested = sum(
+        float(h.get("invested_amount") or 0)
+        for h in holdings
+        if str(h.get("type", "")).lower() == "mutual fund"
+    )
+
+    mf_value = sum(
+        float(h.get("valuation") or 0)
+        for h in holdings
+        if str(h.get("type", "")).lower() == "mutual fund"
+    )
+
+    equity_value = sum(
+        float(h.get("valuation") or 0)
+        for h in holdings
+        if str(h.get("type", "")).lower() in {"equity", "share", "shares"}
+    )
+
+    total_value = mf_value + equity_value
+
+    profit = mf_value - mf_invested
+    profit_percent = (profit / mf_invested * 100) if mf_invested > 0 else 0
+
 
     # -------------------------------------------------
     # MODEL ASSET ALLOCATION
@@ -541,10 +563,12 @@ def dashboard_data():
     # -------------------------------------------------
     return jsonify({
         "summary": {
-            "total_invested": round(total_invested, 2),
-            "current_value": round(total_value, 2),
-            "profit": round(profit, 2),
-            "profit_percent": round(profit_percent, 2)
+            "invested_value_mf": round(mf_invested, 2),
+            "current_value_mf": round(mf_value, 2),
+            "profit_mf": round(profit, 2),
+            "profit_percent_mf": round(profit_percent, 2),
+            "equity_value": round(equity_value, 2),
+            "total_portfolio_value": round(total_value, 2)
         },
         "asset_allocation": asset_allocation,
         "top_amc": top_amc,
@@ -552,6 +576,7 @@ def dashboard_data():
         "holdings": clean_holdings,
         "filters": {"user": include_user, "members": member_ids},
     }), 200
+
 
 
 # ---------- Portfolio Detail ----------
@@ -663,7 +688,12 @@ def history_data():
 def portfolio_with_members(portfolio_id):
     """
     Returns all holdings (user + family members) for a specific historical portfolio_id.
-    Each entry includes summary + holdings grouped by member.
+    Includes:
+      - Member-wise holdings summary
+      - NAV, Quantity, Invested Amount
+      - Top 10 AMCs
+      - Top 10 Categories
+      - Model Asset Allocation
     """
     user_id = session.get("user_id")
     if not user_id:
@@ -672,7 +702,7 @@ def portfolio_with_members(portfolio_id):
     conn = get_db_conn()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    # ✅ Step 1: Get the user's family_id
+    # ✅ Step 1: Get user's family_id
     cur.execute("SELECT family_id FROM users WHERE user_id = %s", (user_id,))
     family = cur.fetchone()
     family_id = family["family_id"] if family else None
@@ -681,15 +711,19 @@ def portfolio_with_members(portfolio_id):
         conn.close()
         return jsonify({"error": "Family not found"}), 404
 
-    # ✅ Step 2: Get all holdings for this portfolio_id (both user + family members)
+    # ✅ Step 2: Fetch all holdings (user + family members)
     cur.execute("""
         SELECT 
             p.member_id,
             fm.name AS member_name,
-            p.fund_name AS company,
-            p.isin_no AS isin,
-            p.valuation AS value,
-            p.type AS category
+            p.fund_name,
+            p.isin_no,
+            p.units AS quantity,
+            p.nav,
+            p.invested_amount,
+            p.valuation,
+            p.type AS category,
+            p.sub_category
         FROM portfolios p
         LEFT JOIN family_members fm ON p.member_id = fm.id
         JOIN users u ON p.user_id = u.user_id
@@ -697,34 +731,40 @@ def portfolio_with_members(portfolio_id):
           AND (u.user_id = %s OR fm.family_id = %s)
         ORDER BY p.member_id NULLS FIRST, p.fund_name
     """, (portfolio_id, user_id, family_id))
-
     rows = cur.fetchall()
-    cur.close()
-    conn.close()
 
     if not rows:
+        cur.close()
+        conn.close()
         return jsonify({"error": "No holdings found for this portfolio"}), 404
 
     # ✅ Step 3: Group holdings by member
     grouped = {}
     for r in rows:
         member_id = r["member_id"]
-        member_name = r["member_name"] if r["member_name"] else "You"
+        member_name = r["member_name"] or "You"
+
         if member_id not in grouped:
             grouped[member_id] = {
                 "label": member_name,
                 "member_id": member_id,
                 "holdings": [],
             }
+
         grouped[member_id]["holdings"].append({
-            "company": r["company"],
-            "isin": r["isin"],
-            "value": float(r["value"] or 0),
-            "category": r["category"]
+            "company": r["fund_name"],
+            "isin": r["isin_no"],
+            "quantity": float(r["quantity"] or 0),
+            "nav": float(r["nav"] or 0),
+            "invested_amount": float(r["invested_amount"] or 0),
+            "value": float(r["valuation"] or 0),
+            "category": r["category"] or "N/A",
+            "sub_category": r["sub_category"] or "Unclassified"
         })
 
     # ✅ Step 4: Summaries per member
     results = []
+    all_holdings = []
     for m_id, data in grouped.items():
         holdings = data["holdings"]
         total = sum(h["value"] for h in holdings)
@@ -736,11 +776,80 @@ def portfolio_with_members(portfolio_id):
             "summary": {"total": total, "equity": equity, "mf": mf},
             "holdings": holdings
         })
+        all_holdings.extend(holdings)
 
+    # ✅ Step 5: Compute Top 10 AMCs
+    amc_summary = {}
+    known_amcs = [
+        "MIRAE ASSET", "ICICI PRUDENTIAL", "ADITYA BIRLA", "NIPPON INDIA",
+        "SBI", "HDFC", "AXIS", "KOTAK", "DSP", "TATA", "MOTILAL OSWAL",
+        "BANDHAN", "QUANT", "UTI", "FRANKLIN", "PGIM", "PARAG PARIKH",
+        "INVESCO", "JM", "SUNDARAM", "IDFC", "CANARA ROBECO"
+    ]
+
+    def extract_amc_name(fund_name: str):
+        name = (fund_name or "").upper()
+        for amc in known_amcs:
+            if amc in name:
+                return amc
+        return "OTHERS"
+
+    for h in all_holdings:
+        amc = extract_amc_name(h["company"])
+        val = float(h["value"] or 0)
+        if val > 0:
+            amc_summary[amc] = amc_summary.get(amc, 0) + val
+
+    top_amc = sorted(
+        [{"amc": k, "value": round(v, 2)} for k, v in amc_summary.items()],
+        key=lambda x: x["value"],
+        reverse=True
+    )[:10]
+
+    # ✅ Step 6: Compute Top 10 Categories (Schemes)
+    subcat_summary = {}
+    for h in all_holdings:
+        sub = h["sub_category"]
+        val = float(h["value"] or 0)
+        if val > 0:
+            subcat_summary[sub] = subcat_summary.get(sub, 0) + val
+
+    top_category = sorted(
+        [{"category": k, "value": round(v, 2)} for k, v in subcat_summary.items()],
+        key=lambda x: x["value"],
+        reverse=True
+    )[:10]
+
+    # ✅ Step 7: Model Asset Allocation (like dashboard)
+    asset_summary = {}
+    for h in all_holdings:
+        cat = h["category"] or "Others"
+        val = float(h["value"] or 0)
+        asset_summary[cat] = asset_summary.get(cat, 0) + val
+
+    total_val = sum(asset_summary.values())
+    asset_allocation = [
+        {
+            "category": k,
+            "value": round(v, 2),
+            "percentage": round(v / total_val * 100, 2) if total_val > 0 else 0,
+        }
+        for k, v in asset_summary.items()
+    ]
+    asset_allocation.sort(key=lambda x: x["value"], reverse=True)
+
+    cur.close()
+    conn.close()
+
+    # ✅ Step 8: Final response
     return jsonify({
         "portfolio_id": portfolio_id,
-        "members": results
+        "members": results,
+        "top_amc": top_amc,
+        "top_category": top_category,
+        "asset_allocation": asset_allocation
     }), 200
+
 
 # ---------- Delete Portfolio ----------
 @app.route("/delete-portfolio/<int:portfolio_id>", methods=["DELETE"])

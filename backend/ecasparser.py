@@ -32,61 +32,33 @@ def extract_blocks_text(file_path: str, password: str | None = None) -> str:
 # -----------------------------------------------------
 # CATEGORY + SUBCATEGORY DETECTION
 # -----------------------------------------------------
+from typing import Tuple
+
 def classify_instrument(fund_name: str) -> Tuple[str, str]:
     """
-    Infer SEBI-style category and subcategory from fund name.
-    Handles Equity, Debt, Hybrid, Gold, Thematic, Sectoral, ESG, etc.
+    Classify a mutual fund into SEBI-style Category and Subcategory.
+    Covers Equity, Debt, Hybrid, Commodity, Sectoral, ESG, International, and Others.
     """
-    name = fund_name.lower()
 
-    # --- Commodity / Gold ---
+    name = fund_name.lower().strip()
+
+    # --- 1️⃣ Commodity / Gold / REITs ---
     if "gold" in name:
         return "Commodity", "Gold"
     if "silver" in name:
         return "Commodity", "Silver"
-    if "reit" in name or "invit" in name or "real estate" in name:
-        return "Commodity", "REIT/InvIT"
+    if any(k in name for k in ["reit", "invit", "real estate"]):
+        return "Commodity", "REIT / InvIT"
 
-    # --- Equity: Core Subtypes ---
-    if "small cap" in name:
-        return "Equity", "Small Cap"
-    if "mid cap" in name:
-        return "Equity", "Mid Cap"
-    if "large cap" in name or "bluechip" in name:
-        return "Equity", "Large Cap"
-    if "flexi" in name or "multi cap" in name or "multicap" in name:
-        return "Equity", "Flexi Cap"
-    if "focused" in name:
-        return "Equity", "Focused"
-    if "elss" in name or "tax saver" in name:
-        return "Equity", "ELSS / Tax Saving"
-    if "value" in name:
-        return "Equity", "Value"
-    if "contra" in name:
-        return "Equity", "Contra"
-    if "dividend" in name:
-        return "Equity", "Dividend Yield"
-    if "equity" in name:
-        return "Equity", "Equity Diversified"
-
-    # --- Equity: Thematic / Sectoral ---
+    # --- 2️⃣ Hybrid Funds (check before Equity because of overlap like "Equity Hybrid") ---
     if any(k in name for k in [
-        "bank", "financial", "psu", "infra", "infrastructure", "energy",
-        "power", "auto", "manufacturing", "consumption", "pharma", "health",
-        "tech", "it", "fmcg", "transport", "commodity", "export", "service"
+        "balanced", "hybrid", "advantage", "asset allocator",
+        "multi asset", "dynamic asset", "aggressive hybrid"
     ]):
-        return "Equity", "Sectoral / Thematic"
-
-    if "esg" in name or "responsible" in name or "sustain" in name:
-        return "Equity", "ESG / Responsible"
-
-    # --- Hybrid Funds ---
-    if any(k in name for k in ["balanced", "hybrid", "advantage", "asset allocator",
-                               "multi asset", "dynamic asset", "aggressive hybrid"]):
-        if "balanced" in name or "advantage" in name:
-            return "Hybrid", "Balanced Advantage"
         if "aggressive" in name:
             return "Hybrid", "Aggressive Hybrid"
+        if "balanced" in name or "advantage" in name:
+            return "Hybrid", "Balanced Advantage"
         if "multi asset" in name or "asset allocator" in name:
             return "Hybrid", "Multi Asset"
         return "Hybrid", "Hybrid"
@@ -96,14 +68,59 @@ def classify_instrument(fund_name: str) -> Tuple[str, str]:
     if "equity savings" in name:
         return "Hybrid", "Equity Savings"
 
-    # --- Debt / Fixed Income ---
+    # --- 3️⃣ Equity: Core Subtypes ---
+    if "small cap" in name:
+        return "Equity", "Small Cap"
+    if "mid cap" in name:
+        return "Equity", "Mid Cap"
+    if "large cap" in name or "bluechip" in name:
+        return "Equity", "Large Cap"
+    if any(k in name for k in ["flexi", "multi cap", "multicap"]):
+        return "Equity", "Flexi Cap"
+    if "focused" in name:
+        return "Equity", "Focused"
+    if "elss" in name or "tax saver" in name:
+        return "Equity", "ELSS / Tax Saving"
+    if "contra" in name:
+        return "Equity", "Contra"
+    if "value" in name:
+        return "Equity", "Value"
+    if "dividend yield" in name or "dividend" in name:
+        return "Equity", "Dividend Yield"
+
+    # --- 4️⃣ Equity: Sectoral / Thematic / ESG / Index ---
+    if any(k in name for k in [
+        "bank", "financial", "psu", "infra", "infrastructure", "energy",
+        "power", "auto", "manufacturing", "consumption", "pharma", "health",
+        "it", "tech", "fmcg", "transport", "commodity", "defence",
+        "chemical", "metal", "metals", "realty", "export", "service"
+    ]):
+        return "Equity", "Sectoral / Thematic"
+
+    if any(k in name for k in ["esg", "responsible", "sustain"]):
+        return "Equity", "ESG / Responsible"
+
+    if any(k in name for k in ["index", "nifty", "sensex"]):
+        return "Equity", "Index"
+
+    if "equity" in name:
+        return "Equity", "Equity Diversified"
+
+    # --- 5️⃣ Debt / Fixed Income ---
     if any(k in name for k in [
         "debt", "income", "bond", "short term", "liquid", "credit", "corporate",
-        "low duration", "overnight", "gilt", "treasury", "ultra short", "floating", "floater"
+        "low duration", "overnight", "gilt", "treasury", "ultra short", "floating", "floater",
+        "money market", "duration", "fund income"
     ]):
-        if "liquid" in name or "overnight" in name or "ultra short" in name:
-            return "Debt", "Liquid / Money Market"
-        if "short" in name and "term" in name:
+        if "overnight" in name:
+            return "Debt", "Overnight"
+        if "liquid" in name:
+            return "Debt", "Liquid"
+        if "money market" in name:
+            return "Debt", "Money Market"
+        if "low duration" in name:
+            return "Debt", "Low Duration"
+        if "short term" in name:
             return "Debt", "Short Duration"
         if "medium" in name or "long" in name:
             return "Debt", "Medium / Long Duration"
@@ -115,14 +132,16 @@ def classify_instrument(fund_name: str) -> Tuple[str, str]:
             return "Debt", "Floating Rate"
         return "Debt", "Bond / Income"
 
-    # --- International / Global / FoF ---
-    if "global" in name or "international" in name or "us" in name or "overseas" in name:
-        return "International", "Global / Overseas"
+    # --- 6️⃣ Fund of Funds (check before International) ---
     if "fund of funds" in name or "fof" in name:
         return "Others", "Fund of Funds"
 
-    # --- Default fallback ---
-    return "Others", "Unclassified"
+    # --- 7️⃣ International / Global Funds ---
+    if any(k in name for k in ["global", "international", "us", "overseas", "world"]):
+        return "International", "Global / Overseas"
+
+    # --- 8️⃣ Default Fallback ---
+    return "Unclassified", "Unknown"
 
 
 # -----------------------------------------------------
@@ -256,7 +275,7 @@ def parse_ecas_text(text: str) -> Tuple[List[Dict], float]:
             value_f = units_f * nav_f
 
         holdings.append({
-            "type": "Equity",
+            "type": "Shares",
             "fund_name": company,
             "isin_no": isin.strip(),
             "units": units_f,

@@ -1,24 +1,25 @@
 import { useState, useMemo } from 'react';
 import { Search, ArrowUpDown } from 'lucide-react';
 
-// ✅ Exported so Dashboard can import the same type
+// ✅ Exported so Dashboard & Snapshot can import the same type
 export interface Holding {
   company?: string;
   isin?: string;
-  quantity?: number; // optional → backend doesn’t have to send it
+  quantity?: number;
+  nav?: number;
+  invested_amount?: number;
   value?: number;
   category?: string;
   type?: string;
   scheme_type?: string;
   amc?: string;
-  invested_amount?: number;
 }
 
 interface HoldingsTableProps {
   holdings: Holding[];
 }
 
-type SortField = 'company' | 'value' | 'category';
+type SortField = 'company' | 'value' | 'category' | 'nav' | 'invested_amount';
 type SortDirection = 'asc' | 'desc';
 
 export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
@@ -36,12 +37,11 @@ export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
   };
 
   const filteredAndSortedHoldings = useMemo(() => {
-    let filtered = holdings.filter((holding) => {
-      const company = (holding.company ?? '').toLowerCase();
-      const isin = (holding.isin ?? '').toLowerCase();
-      const category = (holding.category ?? '').toLowerCase();
+    let filtered = holdings.filter((h) => {
+      const company = (h.company ?? '').toLowerCase();
+      const isin = (h.isin ?? '').toLowerCase();
+      const category = (h.category ?? '').toLowerCase();
       const term = searchTerm.toLowerCase();
-
       return (
         company.includes(term) || isin.includes(term) || category.includes(term)
       );
@@ -59,7 +59,6 @@ export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
 
       const aNum = Number(aVal) || 0;
       const bNum = Number(bVal) || 0;
-
       return sortDirection === 'asc' ? aNum - bNum : bNum - aNum;
     });
 
@@ -105,16 +104,36 @@ export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
                   <ArrowUpDown size={14} />
                 </div>
               </th>
-              <th className="text-left py-3 px-4 font-medium text-gray-700">ISIN</th>
+              <th className="text-left py-3 px-4 font-medium text-gray-700">
+                ISIN
+              </th>
               <th className="text-right py-3 px-4 font-medium text-gray-700">
                 Quantity
+              </th>
+              <th
+                className="text-right py-3 px-4 font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('nav')}
+              >
+                <div className="flex items-center justify-end gap-2">
+                  NAV
+                  <ArrowUpDown size={14} />
+                </div>
+              </th>
+              <th
+                className="text-right py-3 px-4 font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('invested_amount')}
+              >
+                <div className="flex items-center justify-end gap-2">
+                  Invested
+                  <ArrowUpDown size={14} />
+                </div>
               </th>
               <th
                 className="text-right py-3 px-4 font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('value')}
               >
                 <div className="flex items-center justify-end gap-2">
-                  Value
+                  Current Value
                   <ArrowUpDown size={14} />
                 </div>
               </th>
@@ -129,48 +148,55 @@ export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
               </th>
             </tr>
           </thead>
+
           <tbody>
             {filteredAndSortedHoldings.length === 0 ? (
               <tr>
-                <td colSpan={5} className="text-center py-8 text-gray-500">
+                <td colSpan={7} className="text-center py-8 text-gray-500">
                   No holdings found
                 </td>
               </tr>
             ) : (
-              filteredAndSortedHoldings.map((holding, index) => (
+              filteredAndSortedHoldings.map((h, i) => (
                 <tr
-                  key={holding.isin ?? index}
+                  key={h.isin ?? i}
                   className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                    index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+                    i % 2 === 0 ? 'bg-white' : 'bg-gray-50'
                   }`}
                 >
                   <td className="py-3 px-4 font-medium text-gray-800">
-                    {holding.company || 'Unknown'}
+                    {h.company || 'Unknown'}
                   </td>
                   <td className="py-3 px-4 text-gray-600 text-sm">
-                    {holding.isin || '-'}
+                    {h.isin || '-'}
                   </td>
                   <td className="py-3 px-4 text-right text-gray-700">
-                    {holding.quantity ?? '-'}
+                    {h.quantity ? h.quantity.toFixed(2) : '-'}
                   </td>
-                  <td className="py-3 px-4 text-right font-medium text-gray-800">
-                    {fmtCurrency(holding.value)}
+                  <td className="py-3 px-4 text-right text-gray-700">
+                    {h.nav ? `₹${h.nav.toFixed(2)}` : '-'}
+                  </td>
+                  <td className="py-3 px-4 text-right text-gray-700">
+                    {fmtCurrency(h.invested_amount)}
+                  </td>
+                  <td className="py-3 px-4 text-right font-semibold text-gray-800">
+                    {fmtCurrency(h.value)}
                   </td>
                   <td className="py-3 px-4">
                     <span
                       className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                        (holding.category || '').toLowerCase().includes('equity')
+                        (h.category || '').toLowerCase().includes('equity')
                           ? 'bg-blue-100 text-blue-700'
-                          : (holding.category || '').toLowerCase().includes('debt')
+                          : (h.category || '').toLowerCase().includes('debt')
                           ? 'bg-yellow-100 text-yellow-700'
-                          : (holding.category || '').toLowerCase().includes('hybrid')
+                          : (h.category || '').toLowerCase().includes('hybrid')
                           ? 'bg-purple-100 text-purple-700'
-                          : (holding.category || '').toLowerCase().includes('gold')
+                          : (h.category || '').toLowerCase().includes('gold')
                           ? 'bg-amber-100 text-amber-700'
                           : 'bg-gray-100 text-gray-700'
                       }`}
                     >
-                      {holding.category || '—'}
+                      {h.category || '—'}
                     </span>
                   </td>
                 </tr>

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Calendar, TrendingUp, Eye, Trash2 } from 'lucide-react';
+import { Calendar, TrendingUp, Eye, Trash2, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { PortfolioSnapshot } from '../pages/PortfolioSnapshot'; // ✅ dashboard modal
+import { PortfolioSnapshot } from '../pages/PortfolioSnapshot';
 
 interface HistoryItem {
   portfolio_id: number;
@@ -31,7 +31,7 @@ export const History = () => {
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<number | null>(null);
   const navigate = useNavigate();
 
-  // 🔹 Fetch history list
+  // Fetch history list
   useEffect(() => {
     const fetchHistory = async () => {
       try {
@@ -51,7 +51,6 @@ export const History = () => {
     fetchHistory();
   }, [navigate]);
 
-  // 🔹 Delete portfolio
   const handleDelete = async (portfolioId: number) => {
     if (!window.confirm(`Delete portfolio #${portfolioId}?`)) return;
     try {
@@ -69,7 +68,6 @@ export const History = () => {
     }
   };
 
-  // 🔹 View portfolio snapshot
   const handleViewSnapshot = async (portfolioId: number) => {
     try {
       const res = await fetch(`${API_BASE}/portfolio/${portfolioId}/members`, {
@@ -86,7 +84,7 @@ export const History = () => {
     }
   };
 
-  // ---------- UI ----------
+  // -------------------- UI --------------------
   if (isLoading)
     return (
       <Layout>
@@ -110,31 +108,38 @@ export const History = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
       >
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">Portfolio History</h1>
-          <p className="text-gray-600">View, analyze, or delete previous PMS uploads</p>
+        {/* Page Header */}
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-800">Portfolio History</h1>
+            <p className="text-sm text-gray-500 mt-1">
+              View, analyze, or delete previous uploads
+            </p>
+          </div>
         </div>
 
+        {/* History Grid */}
         {history.length === 0 ? (
           <div className="text-center text-gray-500 mt-16">
             No uploads found. Try uploading an ECAS statement.
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
             {history.map((item, i) => (
               <motion.div
                 key={item.portfolio_id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: i * 0.05 }}
-                className="bg-white rounded-2xl shadow-lg p-6 flex flex-col justify-between hover:shadow-xl transition-all"
+                transition={{ delay: i * 0.05 }}
+                className="bg-white rounded-2xl shadow p-6 hover:shadow-lg transition-all flex flex-col justify-between"
               >
-                <div>
-                  <div className="flex items-center gap-2 text-gray-500 mb-2">
+                <div className="space-y-3">
+                  {/* Upload Date */}
+                  <div className="flex items-center gap-2 text-gray-500">
                     <Calendar className="text-blue-500" size={18} />
-                    <span className="text-sm font-medium">Upload Date</span>
+                    <span className="text-sm font-medium">Uploaded on</span>
                   </div>
-                  <p className="text-lg font-semibold text-gray-800 mb-4">
+                  <p className="text-lg font-semibold text-gray-800">
                     {new Date(item.upload_date).toLocaleDateString('en-IN', {
                       day: 'numeric',
                       month: 'short',
@@ -142,26 +147,34 @@ export const History = () => {
                     })}
                   </p>
 
-                  <div className="flex items-center gap-2 text-gray-500 mb-2">
+                  {/* Total Value */}
+                  <div className="flex items-center gap-2 text-gray-500 mt-4">
                     <TrendingUp className="text-green-500" size={18} />
                     <span className="text-sm font-medium">Total Value</span>
                   </div>
-                  <p className="text-2xl font-bold text-gray-900 mb-4">
+                  <p className="text-2xl font-bold text-gray-900">
                     ₹{item.total_value.toLocaleString('en-IN', {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}
                   </p>
 
+                  {/* Members */}
                   {item.members?.length ? (
-                    <p className="text-sm text-gray-600">
-                      👨‍👩‍👧 {item.member_count} Member
-                      {item.member_count! > 1 ? 's' : ''}: {item.members.join(', ')}
-                    </p>
+                    <div className="flex items-start gap-2 text-gray-600 text-sm mt-4">
+                      <Users size={16} className="text-purple-500 mt-[2px]" />
+                      <span>
+                        {item.member_count} Member{item.member_count! > 1 ? 's' : ''}:{' '}
+                        <span className="font-medium text-gray-800">
+                          {item.members.join(', ')}
+                        </span>
+                      </span>
+                    </div>
                   ) : null}
                 </div>
 
-                <div className="flex gap-2 mt-4">
+                {/* Buttons */}
+                <div className="flex gap-2 mt-6">
                   <button
                     onClick={() => handleViewSnapshot(item.portfolio_id)}
                     className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white font-medium py-2 rounded-lg hover:bg-blue-700 active:scale-95 transition-all"
@@ -182,7 +195,7 @@ export const History = () => {
         )}
       </motion.div>
 
-      {/* 🟦 Snapshot Dashboard Modal */}
+      {/* Snapshot Modal */}
       <AnimatePresence>
         {isSnapshotOpen && selectedPortfolioId && memberPortfolios.length > 0 && (
           <PortfolioSnapshot
