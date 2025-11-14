@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/Layout';
-import { Users, PlusCircle, Mail, Phone, Clock } from 'lucide-react';
+import { Users, PlusCircle, Mail, Phone, Clock, Trash2 } from 'lucide-react'; // ✅ added Trash2 icon
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 
@@ -22,11 +22,11 @@ export const ProfilePage = () => {
   const [newMember, setNewMember] = useState({ name: '', email: '', phone: '' });
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [deleting, setDeleting] = useState<number | null>(null); // ✅ to track which member is being deleted
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // ✅ Fetch family members and upload history
         const [famRes, histRes] = await Promise.all([
           fetch(`${API_BASE}/family/members`, { credentials: 'include' }),
           fetch(`${API_BASE}/history-data`, { credentials: 'include' }),
@@ -76,6 +76,30 @@ export const ProfilePage = () => {
     }
   };
 
+  // ✅ NEW: Delete family member
+  const handleDeleteMember = async (member_id: number) => {
+    const confirmDelete = window.confirm('Are you sure you want to delete this family member?');
+    if (!confirmDelete) return;
+
+    setDeleting(member_id);
+    try {
+      const res = await fetch(`${API_BASE}/family/delete-member/${member_id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setFamilyMembers((prev) => prev.filter((m) => m.member_id !== member_id));
+      } else {
+        alert(data.error || 'Error deleting member');
+      }
+    } catch (error) {
+      console.error('❌ Error deleting family member:', error);
+    } finally {
+      setDeleting(null);
+    }
+  };
+
   return (
     <Layout>
       <div className="p-8">
@@ -87,7 +111,7 @@ export const ProfilePage = () => {
           <p className="text-gray-600">Welcome to your family dashboard.</p>
         </div>
 
-        {/* ✅ Summary cards (Only 2 now) */}
+        {/* ✅ Summary cards */}
         {loading ? (
           <p>Loading data...</p>
         ) : (
@@ -196,8 +220,20 @@ export const ProfilePage = () => {
                 <motion.div
                   key={m.member_id}
                   whileHover={{ scale: 1.02 }}
-                  className="border rounded-lg p-4 flex flex-col gap-2"
+                  className="border rounded-lg p-4 flex flex-col gap-2 relative"
                 >
+                  <button
+                    onClick={() => handleDeleteMember(m.member_id)}
+                    disabled={deleting === m.member_id}
+                    className="absolute top-3 right-3 text-red-500 hover:text-red-700 transition"
+                  >
+                    {deleting === m.member_id ? (
+                      <span className="text-xs text-gray-400">Deleting...</span>
+                    ) : (
+                      <Trash2 size={18} />
+                    )}
+                  </button>
+
                   <p className="font-medium text-gray-800">{m.name}</p>
                   {m.email && (
                     <p className="text-sm text-gray-600 flex items-center gap-2">

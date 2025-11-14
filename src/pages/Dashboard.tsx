@@ -153,41 +153,52 @@ export const Dashboard = () => {
       </Layout>
     );
 
+  // --- Safe defaults to prevent crashes ---
   const { summary, asset_allocation, top_amc, top_category, holdings } = data;
 
-  // ✅ Updated: merged “Current Value” cards
+  const safeSummary: DashboardSummary = {
+    invested_value_mf: summary?.invested_value_mf ?? 0,
+    current_value_mf: summary?.current_value_mf ?? 0,
+    profit_mf: summary?.profit_mf ?? 0,
+    profit_percent_mf: summary?.profit_percent_mf ?? 0,
+    equity_value: summary?.equity_value ?? 0,
+    total_portfolio_value: summary?.total_portfolio_value ?? 0,
+  };
+
+  const safeAssetAlloc = Array.isArray(asset_allocation) ? asset_allocation : [];
+  const safeTopAMC = Array.isArray(top_amc) ? top_amc : [];
+  const safeTopCategory = Array.isArray(top_category) ? top_category : [];
+  const safeHoldings = Array.isArray(holdings) ? holdings : [];
+
+  // ✅ Safe summary cards (no undefined crashes)
   const summaryCards = [
     {
       title: 'Invested Value (MF)',
-      value: summary.invested_value_mf,
+      value: safeSummary.invested_value_mf,
       icon: Wallet,
       color: 'green',
     },
     {
       title: 'Current Value (Total)',
-      value: summary.total_portfolio_value,
-      subValue: summary.current_value_mf,
-      subLabel: 'MF',
+      value: safeSummary.total_portfolio_value,
+      subValues: [
+        { label: 'MF', value: safeSummary.current_value_mf },
+        { label: 'Shares', value: safeSummary.equity_value },
+      ],
       icon: TrendingUp,
       color: 'blue',
     },
     {
       title: 'Profit (MF)',
-      value: summary.profit_mf,
+      value: safeSummary.profit_mf,
       icon: Briefcase,
-      color: summary.profit_mf >= 0 ? 'green' : 'red',
+      color: safeSummary.profit_mf >= 0 ? 'green' : 'red',
     },
     {
       title: 'Return % (MF)',
-      value: summary.profit_percent_mf,
+      value: safeSummary.profit_percent_mf,
       icon: PieChartIcon,
       color: 'purple',
-    },
-    {
-      title: 'Shares Value',
-      value: summary.equity_value,
-      icon: Wallet,
-      color: 'amber',
     },
   ];
 
@@ -252,7 +263,7 @@ export const Dashboard = () => {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
           {summaryCards.map((card, i) => {
             const Icon = card.icon;
             return (
@@ -262,23 +273,39 @@ export const Dashboard = () => {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.1 }}
               >
-                <div className="bg-white rounded-xl shadow p-6">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="p-3 rounded-lg bg-gray-100">
-                      <Icon className={`text-${card.color}-500`} size={24} />
+                <div className="bg-white rounded-xl shadow p-6 h-full flex flex-col justify-between hover:shadow-md transition-shadow min-h-[180px]">
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="p-3 rounded-lg bg-gray-100">
+                        <Icon className={`text-${card.color}-500`} size={24} />
+                      </div>
                     </div>
-                  </div>
-                  <h3 className="text-sm font-medium text-gray-600 mb-1">{card.title}</h3>
-                  <p className="text-2xl font-bold text-gray-800">
-                    {card.title.includes('%')
-                      ? `${card.value.toFixed(2)}%`
-                      : `₹${card.value.toLocaleString('en-IN')}`}
-                  </p>
-                  {card.subValue !== undefined && (
-                    <p className="text-sm text-gray-500 mt-1">
-                      ({card.subLabel}: ₹{card.subValue.toLocaleString('en-IN')})
+
+                    <h3 className="text-sm font-medium text-gray-600 mb-1">{card.title}</h3>
+
+                    <p className="text-2xl font-bold text-gray-900">
+                      {card.title.includes('%')
+                        ? `${card.value.toFixed(2)}%`
+                        : `₹${card.value.toLocaleString('en-IN')}`}
                     </p>
-                  )}
+
+                    {/* Subvalues (MF + Shares) */}
+                    {card.subValues && card.subValues.length > 0 && (
+                      <div
+                        className={`mt-2 space-y-1 pl-3 border-l-2 border-${card.color}-200 text-gray-500`}
+                      >
+                        {card.subValues.map((sub, idx) => (
+                          <div
+                            key={idx}
+                            className="flex justify-between text-sm leading-tight"
+                          >
+                            <span>{sub.label}</span>
+                            <span>₹{sub.value.toLocaleString('en-IN')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </motion.div>
             );
@@ -296,7 +323,7 @@ export const Dashboard = () => {
               <ResponsiveContainer>
                 <PieChart>
                   <Pie
-                    data={asset_allocation}
+                    data={safeAssetAlloc}
                     dataKey="percentage"
                     nameKey="category"
                     outerRadius={130}
@@ -309,12 +336,12 @@ export const Dashboard = () => {
                       return `${name}: ${percent}%`;
                     }}
                   >
-                    {asset_allocation.map((_, i) => (
+                    {safeAssetAlloc.map((_, i) => (
                       <Cell key={i} fill={COLORS[i % COLORS.length]} />
                     ))}
                   </Pie>
 
-                  {/* Center total value */}
+                  {/* Center total */}
                   <text
                     x="50%"
                     y="50%"
@@ -322,7 +349,7 @@ export const Dashboard = () => {
                     dominantBaseline="middle"
                     className="text-lg font-semibold fill-gray-700"
                   >
-                    ₹{summary.total_portfolio_value.toLocaleString('en-IN')}
+                    ₹{safeSummary.total_portfolio_value.toLocaleString('en-IN')}
                   </text>
 
                   <Tooltip
@@ -348,7 +375,7 @@ export const Dashboard = () => {
                 <ResponsiveContainer width="100%">
                   <BarChart
                     layout="vertical"
-                    data={top_amc}
+                    data={safeTopAMC}
                     margin={{ top: 10, right: 40, left: 120, bottom: 10 }}
                     barCategoryGap="20%"
                   >
@@ -361,32 +388,19 @@ export const Dashboard = () => {
                       tickLine={false}
                       axisLine={false}
                       interval={0}
-                      tick={({ x, y, payload }) => (
-                        <text
-                          x={x - 10}
-                          y={y + 4}
-                          textAnchor="end"
-                          fill="#374151"
-                          fontSize={12}
-                        >
-                          {payload?.value || ''}
-                        </text>
-                      )}
                     />
                     <Tooltip
-                      formatter={(value: ValueType) => {
-                        const v = typeof value === 'number' ? value : Number(value);
-                        return `₹${v.toLocaleString('en-IN')}`;
-                      }}
+                      formatter={(value: ValueType) =>
+                        `₹${Number(value).toLocaleString('en-IN')}`
+                      }
                     />
                     <Bar dataKey="value" fill="#2563eb" barSize={28} radius={[4, 4, 4, 4]}>
                       <LabelList
                         dataKey="value"
                         position="right"
-                        formatter={(label: React.ReactNode) => {
-                          const v = typeof label === 'number' ? label : Number(label ?? 0);
-                          return `₹${v.toLocaleString('en-IN')}`;
-                        }}
+                        formatter={(label: React.ReactNode) =>
+                          `₹${Number(label ?? 0).toLocaleString('en-IN')}`
+                        }
                         fontSize={11}
                       />
                     </Bar>
@@ -404,7 +418,7 @@ export const Dashboard = () => {
                 <ResponsiveContainer width="100%">
                   <BarChart
                     layout="vertical"
-                    data={top_category}
+                    data={safeTopCategory}
                     margin={{ top: 10, right: 40, left: 120, bottom: 10 }}
                     barCategoryGap="20%"
                   >
@@ -417,32 +431,19 @@ export const Dashboard = () => {
                       tickLine={false}
                       axisLine={false}
                       interval={0}
-                      tick={({ x, y, payload }) => (
-                        <text
-                          x={x - 10}
-                          y={y + 4}
-                          textAnchor="end"
-                          fill="#374151"
-                          fontSize={12}
-                        >
-                          {payload?.value || ''}
-                        </text>
-                      )}
                     />
                     <Tooltip
-                      formatter={(value: ValueType) => {
-                        const v = typeof value === 'number' ? value : Number(value);
-                        return `₹${v.toLocaleString('en-IN')}`;
-                      }}
+                      formatter={(value: ValueType) =>
+                        `₹${Number(value).toLocaleString('en-IN')}`
+                      }
                     />
                     <Bar dataKey="value" fill="#6b7280" barSize={28} radius={[4, 4, 4, 4]}>
                       <LabelList
                         dataKey="value"
                         position="right"
-                        formatter={(label: React.ReactNode) => {
-                          const v = typeof label === 'number' ? label : Number(label ?? 0);
-                          return `₹${v.toLocaleString('en-IN')}`;
-                        }}
+                        formatter={(label: React.ReactNode) =>
+                          `₹${Number(label ?? 0).toLocaleString('en-IN')}`
+                        }
                         fontSize={11}
                       />
                     </Bar>
@@ -455,7 +456,7 @@ export const Dashboard = () => {
 
         {/* Holdings Table */}
         <div className="bg-white rounded-xl shadow p-6">
-          <HoldingsTable holdings={holdings} />
+          <HoldingsTable holdings={safeHoldings} />
         </div>
       </div>
     </Layout>

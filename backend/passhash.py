@@ -1,2 +1,3 @@
-from werkzeug.security import generate_password_hash
-print(generate_password_hash("1111"))
+from nsdl_parser import extract_blocks_text
+
+extract_blocks_text("/Users/sohamathawale/Downloads/nsdl cas.pdf")

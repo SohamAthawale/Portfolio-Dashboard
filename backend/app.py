@@ -386,22 +386,24 @@ def dashboard_data():
     # -------------------------------------------------
     # CALCULATE TOTALS
     # -------------------------------------------------
+# Calculate MF totals - INCLUDING MUTUAL FUND FOLIO
     mf_invested = sum(
         float(h.get("invested_amount") or 0)
         for h in holdings
-        if str(h.get("type", "")).lower() == "mutual fund"
+        if str(h.get("type", "")).lower() in {"mutual fund", "mutual", "mf", "mutual fund folio", "folio"}
     )
 
     mf_value = sum(
         float(h.get("valuation") or 0)
         for h in holdings
-        if str(h.get("type", "")).lower() == "mutual fund"
+        if str(h.get("type", "")).lower() in {"mutual fund", "mutual", "mf", "mutual fund folio", "folio"}
     )
 
+    # Calculate equity totals
     equity_value = sum(
         float(h.get("valuation") or 0)
         for h in holdings
-        if str(h.get("type", "")).lower() in {"equity", "share", "shares"}
+        if str(h.get("type", "")).lower() in {"equity", "share", "shares", "stock", "stocks"}
     )
 
     total_value = mf_value + equity_value
@@ -430,8 +432,8 @@ def dashboard_data():
 
     asset_allocation.sort(key=lambda x: x["value"], reverse=True)
 
-    # -------------------------------------------------
-    # TOP 10 AMCs — robust name detection + grouping
+   # -------------------------------------------------
+# TOP 10 AMCs — robust name detection + grouping (EXCLUDING SHARES)
     # -------------------------------------------------
     amc_summary = {}
 
@@ -439,7 +441,7 @@ def dashboard_data():
         "DIRECT PLAN", "DIRECT GROWTH", "PLAN GROWTH", "GROWTH PLAN", "PLAN- GROWTH",
         "GROWTH OPTION", "GROWTH", "IDCW", "DIR GR", "DIRECT PLAN-GROWTH",
         "EQUITY SHARES", "PLAN", "OPTION", "REGULAR DIRECT", "TERMS", "INR", "LIMITED",
-        "SCHEME", "FUND MANAGEMENT", "#"
+        "SCHEME", "FUND MANAGEMENT", "#","NEW"
     ]
 
     stop_words = {
@@ -450,11 +452,30 @@ def dashboard_data():
     }
 
     known_amcs = [
-        "MIRAE ASSET", "ICICI PRUDENTIAL", "ADITYA BIRLA", "NIPPON INDIA",
-        "SBI", "HDFC", "AXIS", "KOTAK", "DSP", "TATA", "MOTILAL OSWAL",
-        "BANDHAN", "QUANT", "UTI", "FRANKLIN", "PGIM", "PARAG PARIKH",
-        "INVESCO", "NIPPON", "MIRAE", "JM", "SUNDARAM", "IDFC", "CANARA ROBECO"
+        # Large established AMCs
+        "SBI", "HDFC", "ICICI PRUDENTIAL", "KOTAK", "AXIS", "NIPPON INDIA",
+        "ADITYA BIRLA SUN LIFE", "TATA", "UTI", "DSP", "IDFC", "CANARA ROBECO",
+        "SUNDARAM", "FRANKLIN TEMPLETON", "HSBC", "BARODA BNP PARIBAS",
+        
+        # Mid-sized and growing AMCs
+        "MIRAE ASSET", "MOTILAL OSWAL", "PGIM", "QUANT", "BANDHAN", "JM FINANCIAL",
+        "INVESCO", "MAHINDRA MANULIFE", "SAMCO", "WHITE OAK", "TRUST",
+        
+        # Specialized and newer AMCs
+        "PARAG PARIKH", "EDELWEISS", "ITI", "NAVI", "UNION", "TAURUS",
+        "BOI AXA", "LIC", "INDIABULLS", "SHRIRAM",
+        
+        # International players
+        "ABSL", "BNP PARIBAS", "GOLDMAN SACHS", "MIRAE", "PRINCIPAL",
+        
+        # Hybrid and thematic focused
+        "SUNDARAM", "L&T", "IDBI", "SHRIRAM", "JIFFY",
+        
+        # Updated and merged entities
+        "ADITYA BIRLA", "ICICI", "PRUDENTIAL", "SUN LIFE", "BIRLA SUN LIFE"
     ]
+
+    # Sort by length (longest first) for better matching
     known_amcs = sorted([k.upper() for k in known_amcs], key=lambda x: -len(x))
 
     def extract_amc_name(fund_name: str) -> str:
@@ -508,7 +529,12 @@ def dashboard_data():
 
         return "OTHERS"
 
+    # EXCLUDE SHARES from AMC summary
     for h in holdings:
+        # Skip if it's equity/shares
+        if str(h.get("type", "")).lower() in {"equity", "share", "shares", "stock", "stocks"}:
+            continue
+            
         fund_name = h.get("fund_name") or ""
         val = float(h.get("valuation") or 0)
         amc = extract_amc_name(fund_name)
@@ -523,10 +549,14 @@ def dashboard_data():
     )[:10]
 
     # -------------------------------------------------
-    # TOP 10 CATEGORIES (by sub_category)
+    # TOP 10 CATEGORIES (by sub_category) - EXCLUDING SHARES
     # -------------------------------------------------
     subcat_summary = {}
     for h in holdings:
+        # Skip if it's equity/shares
+        if str(h.get("type", "")).lower() in {"equity", "share", "shares", "stock", "stocks"}:
+            continue
+            
         sub = h.get("sub_category") or "Unclassified"
         val = float(h.get("valuation") or 0)
         subcat_summary[sub] = subcat_summary.get(sub, 0) + val
@@ -548,16 +578,13 @@ def dashboard_data():
             "isin": h.get("isin_no") or "-",
             "category": h.get("category") or "N/A",
             "sub_category": h.get("sub_category") or "N/A",
-            "quantity": qty if qty > 0 else "-",  # ✅ FIXED: renamed from units → quantity
+            "quantity": qty,  # Now always a float (even if 0)
             "nav": float(h.get("nav") or 0),
             "invested_amount": float(h.get("invested_amount") or 0),
             "value": float(h.get("valuation") or 0),
             "type": h.get("type") or "N/A",
+            # We are not providing scheme_type and amc, so they will be undefined in React
         })
-
-    cur.close()
-    conn.close()
-
     # -------------------------------------------------
     # FINAL RESPONSE
     # -------------------------------------------------
@@ -576,44 +603,6 @@ def dashboard_data():
         "holdings": clean_holdings,
         "filters": {"user": include_user, "members": member_ids},
     }), 200
-
-
-
-# ---------- Portfolio Detail ----------
-@app.route("/portfolio/<int:portfolio_id>", methods=["GET"])
-def portfolio_detail(portfolio_id):
-    user_id = session.get("user_id")
-    if not user_id:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT fund_name AS company, isin_no AS isin, valuation AS value, type AS category
-        FROM portfolios
-        WHERE user_id = %s AND portfolio_id = %s
-        ORDER BY fund_name
-    """, (user_id, portfolio_id))
-    holdings = cur.fetchall()
-    cur.close()
-    conn.close()
-
-    if not holdings:
-        return jsonify({"error": "Portfolio not found"}), 404
-
-    total = sum(float(h["value"] or 0) for h in holdings)
-    equity = sum(float(h["value"] or 0) for h in holdings if h["category"] == "Equity")
-    mf = sum(float(h["value"] or 0) for h in holdings if h["category"] == "Mutual Fund")
-
-    return jsonify({
-        "portfolio_id": portfolio_id,
-        "total_value": total,
-        "equity_value": equity,
-        "mf_value": mf,
-        "bonds_value": 0,
-        "holdings": holdings,
-    }), 200
-
 
 # ---------- History ----------
 @app.route("/history-data")
@@ -684,6 +673,7 @@ def history_data():
     conn.close()
     return jsonify(history), 200
 
+#----------------------Member Portfolios---------------------------------
 @app.route("/portfolio/<int:portfolio_id>/members", methods=["GET"])
 def portfolio_with_members(portfolio_id):
     """
@@ -691,8 +681,8 @@ def portfolio_with_members(portfolio_id):
     Includes:
       - Member-wise holdings summary
       - NAV, Quantity, Invested Amount
-      - Top 10 AMCs
-      - Top 10 Categories
+      - Top 10 AMCs (excluding shares)
+      - Top 10 Categories (excluding shares)
       - Model Asset Allocation
     """
     user_id = session.get("user_id")
@@ -722,7 +712,7 @@ def portfolio_with_members(portfolio_id):
             p.nav,
             p.invested_amount,
             p.valuation,
-            p.type AS category,
+            p.category,
             p.sub_category
         FROM portfolios p
         LEFT JOIN family_members fm ON p.member_id = fm.id
@@ -765,40 +755,132 @@ def portfolio_with_members(portfolio_id):
     # ✅ Step 4: Summaries per member
     results = []
     all_holdings = []
+
     for m_id, data in grouped.items():
         holdings = data["holdings"]
         total = sum(h["value"] for h in holdings)
-        equity = sum(h["value"] for h in holdings if h["category"] == "Equity")
-        mf = sum(h["value"] for h in holdings if h["category"] == "Mutual Fund")
+
+        # Create a breakdown of all categories dynamically
+        category_summary = {}
+        for h in holdings:
+            cat = h.get("category") or "Unclassified"
+            category_summary[cat] = category_summary.get(cat, 0) + h["value"]
+
         results.append({
             "label": data["label"],
             "member_id": m_id,
-            "summary": {"total": total, "equity": equity, "mf": mf},
+            "summary": {"total": total, **category_summary},
             "holdings": holdings
         })
         all_holdings.extend(holdings)
-
-    # ✅ Step 5: Compute Top 10 AMCs
+    # ✅ Step 5: Compute Top 10 AMCs (EXCLUDING SHARES)
     amc_summary = {}
-    known_amcs = [
-        "MIRAE ASSET", "ICICI PRUDENTIAL", "ADITYA BIRLA", "NIPPON INDIA",
-        "SBI", "HDFC", "AXIS", "KOTAK", "DSP", "TATA", "MOTILAL OSWAL",
-        "BANDHAN", "QUANT", "UTI", "FRANKLIN", "PGIM", "PARAG PARIKH",
-        "INVESCO", "JM", "SUNDARAM", "IDFC", "CANARA ROBECO"
+    
+    # Use the same comprehensive AMC list and logic from dashboard
+    junk_terms = [
+        "DIRECT PLAN", "DIRECT GROWTH", "PLAN GROWTH", "GROWTH PLAN", "PLAN- GROWTH",
+        "GROWTH OPTION", "GROWTH", "IDCW", "DIR GR", "DIRECT PLAN-GROWTH",
+        "EQUITY SHARES", "PLAN", "OPTION", "REGULAR DIRECT", "TERMS", "INR", "LIMITED",
+        "SCHEME", "FUND MANAGEMENT", "#","NEW"
     ]
 
+    stop_words = {
+        "SMALL", "CAP", "LARGE", "MID", "OPPORTUNITIES", "OPPORTUNITY", "YIELD",
+        "STRATEGY", "COMMODITIES", "INFRASTRUCTURE", "SERVICES", "BFSI",
+        "DIVIDEND", "CONSUMPTION", "ESG", "BANKING", "FINANCIAL", "FLEXI",
+        "FLEXI CAP", "FLEXI-CAP"
+    }
+
+    known_amcs = [
+        # Large established AMCs
+        "SBI", "HDFC", "ICICI PRUDENTIAL", "KOTAK", "AXIS", "NIPPON INDIA",
+        "ADITYA BIRLA SUN LIFE", "TATA", "UTI", "DSP", "IDFC", "CANARA ROBECO",
+        "SUNDARAM", "FRANKLIN TEMPLETON", "HSBC", "BARODA BNP PARIBAS",
+        
+        # Mid-sized and growing AMCs
+        "MIRAE ASSET", "MOTILAL OSWAL", "PGIM", "QUANT", "BANDHAN", "JM FINANCIAL",
+        "INVESCO", "MAHINDRA MANULIFE", "SAMCO", "WHITE OAK", "TRUST",
+        
+        # Specialized and newer AMCs
+        "PARAG PARIKH", "EDELWEISS", "ITI", "NAVI", "UNION", "TAURUS",
+        "BOI AXA", "LIC", "INDIABULLS", "SHRIRAM",
+        
+        # International players
+        "ABSL", "BNP PARIBAS", "GOLDMAN SACHS", "MIRAE", "PRINCIPAL",
+        
+        # Hybrid and thematic focused
+        "SUNDARAM", "L&T", "IDBI", "SHRIRAM", "JIFFY",
+        
+        # Updated and merged entities
+        "ADITYA BIRLA", "ICICI", "PRUDENTIAL", "SUN LIFE", "BIRLA SUN LIFE"
+    ]
+
+    # Sort by length (longest first) for better matching
+    known_amcs = sorted([k.upper() for k in known_amcs], key=lambda x: -len(x))
+
     def extract_amc_name(fund_name: str):
-        name = (fund_name or "").upper()
-        for amc in known_amcs:
-            if amc in name:
-                return amc
+        """Robust AMC extraction with multiple fallbacks"""
+        if not fund_name:
+            return "OTHERS"
+
+        text = fund_name.upper().strip()
+        for junk in junk_terms:
+            text = text.replace(junk, "")
+        text = text.strip()
+
+        candidate_sections = []
+        if "-" in text:
+            candidate_sections.append(text.split("-", 1)[1].strip())
+        candidate_sections.append(text)
+
+        for section in candidate_sections:
+            for known in known_amcs:
+                if section.startswith(known) or f" {known} " in f" {section} ":
+                    return known
+
+        for section in candidate_sections:
+            words = section.split()
+            if "FUND" in words:
+                idx = words.index("FUND")
+                for take in (2, 1):
+                    if idx - take >= 0:
+                        candidate = " ".join(words[idx - take:idx]).strip()
+                        cand_clean = candidate.replace("&", "").replace(",", "").strip()
+                        for known in known_amcs:
+                            if cand_clean.startswith(known):
+                                return known
+                        tokens = [t for t in cand_clean.split() if t.isalpha()]
+                        if tokens and all(tok not in stop_words for tok in tokens):
+                            return " ".join(tokens).upper()
+
+        for section in candidate_sections:
+            tokens = [t for t in section.replace(",", " ").split() if t.isalpha()]
+            for known in known_amcs:
+                known_tokens = known.split()
+                for i in range(len(tokens) - len(known_tokens) + 1):
+                    if tokens[i:i+len(known_tokens)] == known_tokens:
+                        return known
+
+        for section in candidate_sections:
+            tokens = [t for t in section.split() if t.isalpha()]
+            for t in tokens:
+                if t not in stop_words and len(t) > 1:
+                    return t.upper()
+
         return "OTHERS"
 
+    # EXCLUDE SHARES from AMC summary
     for h in all_holdings:
-        amc = extract_amc_name(h["company"])
-        val = float(h["value"] or 0)
-        if val > 0:
-            amc_summary[amc] = amc_summary.get(amc, 0) + val
+        # Skip if it's shares/equity
+        if h.get("category") == "Shares":
+            continue
+            
+        fund_name = h.get("company") or ""
+        val = float(h.get("value") or 0)
+        amc = extract_amc_name(fund_name)
+        if val <= 0:
+            continue
+        amc_summary[amc] = amc_summary.get(amc, 0) + val
 
     top_amc = sorted(
         [{"amc": k, "value": round(v, 2)} for k, v in amc_summary.items()],
@@ -806,9 +888,13 @@ def portfolio_with_members(portfolio_id):
         reverse=True
     )[:10]
 
-    # ✅ Step 6: Compute Top 10 Categories (Schemes)
+    # ✅ Step 6: Compute Top 10 Categories (EXCLUDING SHARES)
     subcat_summary = {}
     for h in all_holdings:
+        # Skip if it's shares/equity
+        if h.get("category") == "Shares":
+            continue
+            
         sub = h["sub_category"]
         val = float(h["value"] or 0)
         if val > 0:
@@ -818,24 +904,39 @@ def portfolio_with_members(portfolio_id):
         [{"category": k, "value": round(v, 2)} for k, v in subcat_summary.items()],
         key=lambda x: x["value"],
         reverse=True
-    )[:10]
-
-    # ✅ Step 7: Model Asset Allocation (like dashboard)
+        )[:10]
+    # ✅ Step 7: Model Asset Allocation (match dashboard)
     asset_summary = {}
     for h in all_holdings:
-        cat = h["category"] or "Others"
-        val = float(h["value"] or 0)
+        cat = h.get("category") or "Others"
+        val = float(h.get("value") or 0)
         asset_summary[cat] = asset_summary.get(cat, 0) + val
 
-    total_val = sum(asset_summary.values())
-    asset_allocation = [
-        {
-            "category": k,
-            "value": round(v, 2),
-            "percentage": round(v / total_val * 100, 2) if total_val > 0 else 0,
-        }
-        for k, v in asset_summary.items()
-    ]
+    # Calculate total portfolio value for percentage calculation
+    total_portfolio_value = sum(asset_summary.values())
+
+    asset_allocation = []
+    for cat, val in asset_summary.items():
+        pct = (val / total_portfolio_value * 100) if total_portfolio_value > 0 else 0
+        asset_allocation.append({
+            "category": cat,
+            "value": round(val, 2),
+            "percentage": round(pct, 2)
+        })
+
+    asset_allocation.sort(key=lambda x: x["value"], reverse=True)
+
+    total_portfolio_value = sum(asset_summary.values())
+
+    asset_allocation = []
+    for cat, val in asset_summary.items():
+        pct = (val / total_portfolio_value * 100) if total_portfolio_value > 0 else 0
+        asset_allocation.append({
+            "category": cat,
+            "value": round(val, 2),
+            "percentage": round(pct, 2)
+        })
+
     asset_allocation.sort(key=lambda x: x["value"], reverse=True)
 
     cur.close()
@@ -849,8 +950,6 @@ def portfolio_with_members(portfolio_id):
         "top_category": top_category,
         "asset_allocation": asset_allocation
     }), 200
-
-
 # ---------- Delete Portfolio ----------
 @app.route("/delete-portfolio/<int:portfolio_id>", methods=["DELETE"])
 def delete_portfolio(portfolio_id):
@@ -882,23 +981,6 @@ def delete_portfolio(portfolio_id):
 # -----------------------------------------------------
 # FAMILY ROUTES
 # -----------------------------------------------------
-from flask import request, jsonify, session
-import os, traceback
-from werkzeug.utils import secure_filename
-from db import get_db_conn
-from ecasparser import process_ecas_file  # ensure you import your parser here
-
-UPLOAD_FOLDER = "uploads"  # adjust this path if needed
-
-from flask import request, jsonify, session
-from werkzeug.utils import secure_filename
-from psycopg2.extras import RealDictCursor
-import os, traceback
-from db import get_db_conn
-from ecasparser import process_ecas_file  # make sure this import exists
-
-UPLOAD_FOLDER = "uploads"  # adjust as needed
-
 
 @app.route("/upload-member", methods=["POST"])
 def upload_member_ecas():
@@ -985,6 +1067,7 @@ def upload_member_ecas():
         if conn:
             conn.close()
 
+#-------------------add-members-----------------------
 
 @app.route("/family/add-member", methods=["POST"])
 def add_family_member():
@@ -1048,7 +1131,63 @@ def add_family_member():
         cur.close()
         conn.close()
         return jsonify({"error": str(e)}), 500
+#--------------------delete-member----------------------
+@app.route("/family/delete-member/<int:member_id>", methods=["DELETE"])
+def delete_family_member(member_id):
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
 
+    user_id = session["user_id"]
+
+    conn = get_db_conn()
+    cur = conn.cursor()
+
+    try:
+        # ✅ Get the family_id of the current user
+        cur.execute("SELECT family_id FROM users WHERE user_id = %s", (user_id,))
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "User not found"}), 404
+
+        family_id = row["family_id"] if isinstance(row, dict) else row[0]
+
+        # ✅ Check if the member exists and belongs to the same family
+        cur.execute(
+            "SELECT member_id FROM family_members WHERE member_id = %s AND family_id = %s",
+            (member_id, family_id),
+        )
+        member = cur.fetchone()
+        if not member:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Family member not found or unauthorized"}), 404
+
+        # ✅ Delete the member safely
+        cur.execute(
+            "DELETE FROM family_members WHERE member_id = %s AND family_id = %s",
+            (member_id, family_id),
+        )
+        conn.commit()
+
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "message": "Family member deleted successfully",
+            "member_id": member_id
+        }), 200
+
+    except Exception as e:
+        print("❌ Error deleting family member:", e)
+        traceback.print_exc()
+        conn.rollback()
+        cur.close()
+        conn.close()
+        return jsonify({"error": str(e)}), 500
+
+#--------------------get-members------------------------
 @app.route("/family/members", methods=["GET"])
 @login_required
 def get_family_members():
@@ -1089,137 +1228,6 @@ def get_family_members():
     except Exception as e:
         print("❌ Error fetching family members:", e)
         return jsonify({"error": "Could not fetch family members"}), 500
-
-
-@app.route("/family/dashboard", methods=["GET"])
-@login_required
-def family_dashboard():
-    user = get_current_user()
-    if not user:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    try:
-        conn = get_db_conn()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT 
-                p.fund_name,
-                p.valuation,
-                p.isin_no,
-                COALESCE(fm.name, 'You') AS member_name
-            FROM portfolios p
-            LEFT JOIN family_members fm ON p.member_id = fm.member_id
-            WHERE p.user_id IN (SELECT user_id FROM users WHERE family_id = %s)
-               OR fm.family_id = %s
-        """, (user["family_id"], user["family_id"]))
-        rows = cur.fetchall()
-        cur.close()
-        conn.close()
-
-        total_value = sum(float(r["valuation"] if isinstance(r, dict) else r[1] or 0) for r in rows)
-        holdings = [
-            {
-                "fund_name": r["fund_name"] if isinstance(r, dict) else r[0],
-                "isin": r["isin_no"] if isinstance(r, dict) else r[2],
-                "value": float(r["valuation"] if isinstance(r, dict) else r[1] or 0),
-                "member_name": r["member_name"] if isinstance(r, dict) else r[3],
-            }
-            for r in rows
-        ]
-
-        return jsonify({
-            "family_id": user["family_id"],
-            "total_value": total_value,
-            "holdings": holdings
-        })
-
-    except Exception as e:
-        print("❌ Error fetching family dashboard:", e)
-        return jsonify({"error": "Could not fetch family dashboard"}), 500
-
-@app.route("/family/member/<int:member_id>/dashboard", methods=["GET"])
-@login_required
-def family_member_dashboard(member_id):
-    user = get_current_user()
-    if not user:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    try:
-        conn = get_db_conn()
-        cur = conn.cursor()
-
-        # Verify the member actually belongs to the logged-in user's family
-        cur.execute(
-            "SELECT name, email FROM family_members WHERE member_id = %s AND family_id = %s",
-            (member_id, user["family_id"]),
-        )
-        member = cur.fetchone()
-        if not member:
-            cur.close()
-            conn.close()
-            return jsonify({"error": "Family member not found"}), 404
-
-        member_name = member["name"] if isinstance(member, dict) else member[0]
-        member_email = member["email"] if isinstance(member, dict) else member[1]
-
-        # Fetch all portfolio holdings for this member
-        cur.execute("""
-            SELECT 
-                fund_name,
-                isin_no,
-                valuation,
-                type
-            FROM portfolios
-            WHERE member_id = %s
-            ORDER BY fund_name ASC
-        """, (member_id,))
-
-        holdings = cur.fetchall()
-        cur.close()
-        conn.close()
-
-        if not holdings:
-            return jsonify({
-                "member_id": member_id,
-                "member_name": member_name,
-                "member_email": member_email,
-                "total_value": 0,
-                "holdings": [],
-                "message": "No portfolios found for this family member."
-            }), 200
-
-        # Calculate totals
-        total_value = sum(float(h["valuation"] if isinstance(h, dict) else h[2] or 0) for h in holdings)
-        equity = sum(float(h["valuation"] if isinstance(h, dict) and h["type"] == "Equity"
-                            else (h[2] if len(h) > 3 and h[3] == "Equity" else 0))
-                     for h in holdings)
-        mf = sum(float(h["valuation"] if isinstance(h, dict) and h["type"] == "Mutual Fund"
-                        else (h[2] if len(h) > 3 and h[3] == "Mutual Fund" else 0))
-                 for h in holdings)
-
-        holdings_list = [
-            {
-                "fund_name": h["fund_name"] if isinstance(h, dict) else h[0],
-                "isin_no": h["isin_no"] if isinstance(h, dict) else h[1],
-                "valuation": float(h["valuation"] if isinstance(h, dict) else h[2] or 0),
-                "category": h["type"] if isinstance(h, dict) else (h[3] if len(h) > 3 else None),
-            }
-            for h in holdings
-        ]
-
-        return jsonify({
-            "member_id": member_id,
-            "member_name": member_name,
-            "member_email": member_email,
-            "total_value": total_value,
-            "equity_value": equity,
-            "mf_value": mf,
-            "holdings": holdings_list
-        }), 200
-
-    except Exception as e:
-        print("❌ Error fetching member dashboard:", e)
-        return jsonify({"error": "Could not fetch member dashboard"}), 500
 
 # ---------- Session Routes ----------
 @app.route("/check-session")
