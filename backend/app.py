@@ -1270,6 +1270,176 @@ def session_user():
         }
     }), 200
 
+# -----------------------------------------------------
+# SERVICE REQUESTS (USER + ADMIN)
+# -----------------------------------------------------
+
+# ---------- USER: Create New Request ----------
+@app.route("/service-requests", methods=["POST"])
+@login_required
+def create_service_request():
+    user_id = session["user_id"]
+    data = request.get_json() or {}
+
+    req_type = data.get("request_type")
+    desc = data.get("description")
+
+    if not req_type:
+        return jsonify({"error": "request_type is required"}), 400
+
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute("""
+        INSERT INTO service_requests (user_id, request_type, description, status, created_at)
+        VALUES (%s, %s, %s, 'pending', NOW())
+        RETURNING id, request_id, request_type, description, status, created_at
+    """, (user_id, req_type, desc))
+
+    row = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify(row), 201
+
+
+# ---------- USER: Get My Requests ----------
+@app.route("/service-requests", methods=["GET"])
+@login_required
+def get_my_service_requests():
+    user_id = session["user_id"]
+
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute("""
+        SELECT id, request_id, request_type, description, status, created_at
+        FROM service_requests
+        WHERE user_id = %s
+        ORDER BY created_at DESC
+    """, (user_id,))
+
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return jsonify(rows), 200
+
+
+# ---------- USER: Delete Request ----------
+@app.route("/service-requests/<int:req_id>", methods=["DELETE"])
+@login_required
+def delete_my_service_request(req_id):
+    user_id = session["user_id"]
+
+    conn = get_db_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        DELETE FROM service_requests 
+        WHERE id = %s AND user_id = %s
+        RETURNING id
+    """, (req_id, user_id))
+
+    deleted = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    if not deleted:
+        return jsonify({"error": "Request not found or unauthorized"}), 404
+
+    return jsonify({"message": "Request deleted"}), 200
+
+
+# -----------------------------------------------------
+# ADMIN SIDE
+# -----------------------------------------------------
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if session.get("role") != "admin":
+            return jsonify({"error": "Admin access required"}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
+# ---------- ADMIN: View All Requests ----------
+@app.route("/admin/service-requests", methods=["GET"])
+@login_required
+def admin_get_requests():
+    if session.get("role") != "admin":
+        return jsonify({"error": "Admin only"}), 403
+
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute("""
+        SELECT sr.id, sr.request_id, sr.request_type, sr.description, sr.status, sr.created_at,
+               u.email AS user_name
+        FROM service_requests sr
+        JOIN users u ON u.user_id = sr.user_id
+        ORDER BY sr.created_at DESC
+    """)
+
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return jsonify(rows), 200
+
+
+# ---------- ADMIN: Update Status ----------
+@app.route("/admin/service-requests/<int:req_id>", methods=["PUT"])
+@login_required
+def admin_update_request(req_id):
+    if session.get("role") != "admin":
+        return jsonify({"error": "Admin only"}), 403
+
+    data = request.get_json() or {}
+    status = data.get("status")
+
+    if status not in ["pending", "processing", "completed", "rejected"]:
+        return jsonify({"error": "Invalid status"}), 400
+
+    conn = get_db_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE service_requests
+        SET status = %s
+        WHERE id = %s
+        RETURNING id
+    """, (status, req_id))
+
+    updated = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    if not updated:
+        return jsonify({"error": "Request not found"}), 404
+
+    return jsonify({"message": "Updated successfully"}), 200
+
+
+
+# ---------- ADMIN: Delete Any Request ----------
+@app.route("/admin/service-requests/<int:id>", methods=["DELETE"])
+@admin_required
+def admin_delete_request(id):
+    conn = get_db_conn()
+    cur = conn.cursor()
+
+    cur.execute("DELETE FROM service_requests WHERE id = %s", (id,))
+    conn.commit()
+
+    cur.close()
+    conn.close()
+
+    return jsonify({"message": "Request deleted"}), 200
 
 # ---------- Serve React ----------
 @app.errorhandler(404)

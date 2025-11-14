@@ -8,6 +8,7 @@ import { Dashboard } from './pages/Dashboard';
 import { History } from './pages/History';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { ServiceRequests } from './pages/ServiceRequests';
+import { AdminServiceRequests} from './pages/AdminServiceRequests';
 import { ProfilePage } from './pages/ProfilePage'; // ✅ NEW IMPORT
 
 /* -------------------------------------------------
@@ -60,13 +61,22 @@ function App() {
               </ProtectedRoute>
             }
           />
-
-          {/* ---------- ADMIN ROUTES ---------- */}
+          {/* ---------- USER SERVICE REQUEST PAGE ---------- */}
           <Route
             path="/service-requests"
             element={
-              <ProtectedRoute allowedRoles={['admin']}>
+              <ProtectedRoute allowedRoles={['user']}>
                 <ServiceRequests />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ---------- ADMIN ROUTES ---------- */}
+          <Route
+            path="/admin/service-requests"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminServiceRequests />
               </ProtectedRoute>
             }
           />

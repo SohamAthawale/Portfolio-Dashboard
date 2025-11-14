@@ -9,9 +9,11 @@ import {
   Briefcase,
   ChevronDown,
   Users,
+  Download
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
+
 import {
   PieChart,
   Pie,
@@ -25,6 +27,9 @@ import {
   CartesianGrid,
   LabelList,
 } from 'recharts';
+
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 import { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
@@ -61,12 +66,45 @@ export const Dashboard = () => {
   const [error, setError] = useState<string | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
   const navigate = useNavigate();
   const { user } = useAuth();
 
   const COLORS = ['#2563eb', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#0ea5e9'];
 
-  // --- Close dropdown when clicking outside
+  const downloadPDF = async () => {
+    const element = document.getElementById("dashboard-pdf");
+    if (!element) return;
+
+    const canvas = await html2canvas(element, {
+      scale: 1.2,
+      useCORS: true,
+      scrollY: -window.scrollY
+    });
+
+    const imgData = canvas.toDataURL("image/jpeg", 0.85);
+    const pdf = new jsPDF("p", "mm", "a4");
+
+    const imgWidth = 210;
+    const pageHeight = 297;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    let heightLeft = imgHeight;
+    let position = 0;
+
+    pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+    heightLeft -= pageHeight;
+
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+    }
+
+    pdf.save("Dashboard.pdf");
+  };
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node | null;
@@ -77,7 +115,6 @@ export const Dashboard = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // --- Fetch family members
   useEffect(() => {
     const fetchMembers = async () => {
       try {
@@ -90,7 +127,6 @@ export const Dashboard = () => {
     fetchMembers();
   }, []);
 
-  // --- Fetch dashboard data
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -107,6 +143,7 @@ export const Dashboard = () => {
         const res = await fetch(`${API_BASE}/dashboard-data?${params.toString()}`, {
           credentials: 'include',
         });
+
         if (res.status === 401) return navigate('/login');
         if (!res.ok) throw new Error('Failed to fetch dashboard data');
 
@@ -153,7 +190,6 @@ export const Dashboard = () => {
       </Layout>
     );
 
-  // --- Safe defaults to prevent crashes ---
   const { summary, asset_allocation, top_amc, top_category, holdings } = data;
 
   const safeSummary: DashboardSummary = {
@@ -170,7 +206,6 @@ export const Dashboard = () => {
   const safeTopCategory = Array.isArray(top_category) ? top_category : [];
   const safeHoldings = Array.isArray(holdings) ? holdings : [];
 
-  // ✅ Safe summary cards (no undefined crashes)
   const summaryCards = [
     {
       title: 'Invested Value (MF)',
@@ -209,16 +244,35 @@ export const Dashboard = () => {
 
   return (
     <Layout>
-      <div className="space-y-6">
+      <div id="dashboard-pdf" className="space-y-6 p-4 bg-white">
+
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-3xl font-bold text-gray-800">Dashboard</h1>
+
             {user?.email && (
               <p className="text-sm text-gray-500 mt-1">
                 Logged in as <span className="font-medium">{user.email}</span>
               </p>
             )}
+
+            {/* Download PDF */}
+            <button
+              onClick={downloadPDF}
+              className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition"
+            >
+              <Download size={16} /> Download PDF
+            </button>
+
+            {/* NEW BUTTON - Raise Service Request */}
+            <button
+              onClick={() => navigate('/service-requests')}
+              className="mt-4 ml-3 inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg shadow hover:bg-green-700 transition"
+            >
+              Raise Service Request
+            </button>
+
           </div>
 
           {/* Member Filter Dropdown */}
@@ -231,6 +285,7 @@ export const Dashboard = () => {
               <span>{selectedText}</span>
               <ChevronDown size={16} />
             </button>
+
             {dropdownOpen && (
               <div className="absolute mt-2 w-64 bg-white border rounded-md shadow-lg z-50">
                 <div className="p-3 space-y-2 max-h-64 overflow-y-auto">
@@ -242,11 +297,16 @@ export const Dashboard = () => {
                     />
                     My Holdings
                   </label>
+
                   <div className="border-t my-2"></div>
+
                   {familyMembers.map((m) => {
                     const id = m.id ?? m.member_id;
                     return (
-                      <label key={id} className="flex items-center gap-2 text-sm text-gray-700">
+                      <label
+                        key={id}
+                        className="flex items-center gap-2 text-sm text-gray-700"
+                      >
                         <input
                           type="checkbox"
                           checked={selectedIds.includes(String(id))}
@@ -256,6 +316,7 @@ export const Dashboard = () => {
                       </label>
                     );
                   })}
+
                 </div>
               </div>
             )}
@@ -289,16 +350,12 @@ export const Dashboard = () => {
                         : `₹${card.value.toLocaleString('en-IN')}`}
                     </p>
 
-                    {/* Subvalues (MF + Shares) */}
                     {card.subValues && card.subValues.length > 0 && (
                       <div
                         className={`mt-2 space-y-1 pl-3 border-l-2 border-${card.color}-200 text-gray-500`}
                       >
                         {card.subValues.map((sub, idx) => (
-                          <div
-                            key={idx}
-                            className="flex justify-between text-sm leading-tight"
-                          >
+                          <div key={idx} className="flex justify-between text-sm leading-tight">
                             <span>{sub.label}</span>
                             <span>₹{sub.value.toLocaleString('en-IN')}</span>
                           </div>
@@ -314,25 +371,27 @@ export const Dashboard = () => {
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 2xl:grid-cols-2 gap-8">
-          {/* Model Asset Allocation */}
+          {/* Pie Chart */}
           <div className="bg-white rounded-xl shadow p-6 flex flex-col items-center justify-center">
             <h3 className="text-lg font-semibold text-gray-700 mb-4 self-start">
               Model Asset Allocation
             </h3>
+
             <div className="w-full h-[28rem]">
               <ResponsiveContainer>
                 <PieChart>
                   <Pie
                     data={safeAssetAlloc}
                     dataKey="percentage"
-                    nameKey="category"
                     outerRadius={130}
                     innerRadius={80}
                     labelLine={false}
+                    nameKey="category"
                     label={(props) => {
                       const name = props.name ?? '';
-                      const percent =
-                        typeof props.percent === 'number' ? (props.percent * 100).toFixed(1) : '0';
+                      const percent = typeof props.percent === 'number'
+                        ? (props.percent * 100).toFixed(1)
+                        : '0';
                       return `${name}: ${percent}%`;
                     }}
                   >
@@ -341,7 +400,6 @@ export const Dashboard = () => {
                     ))}
                   </Pie>
 
-                  {/* Center total */}
                   <text
                     x="50%"
                     y="50%"
@@ -355,8 +413,7 @@ export const Dashboard = () => {
                   <Tooltip
                     formatter={(_value: ValueType, _name: NameType, props) => {
                       const category = props?.payload?.category ?? '';
-                      const rupees =
-                        props?.payload?.value &&
+                      const rupees = props?.payload?.value &&
                         `₹${props.payload.value.toLocaleString('en-IN')}`;
                       return [rupees, category];
                     }}
@@ -366,9 +423,10 @@ export const Dashboard = () => {
             </div>
           </div>
 
-          {/* Right Column: Top AMC + Categories */}
+          {/* Bar Charts */}
           <div className="flex flex-col gap-8">
-            {/* Top 10 AMC */}
+
+            {/* Top AMC */}
             <div className="bg-white rounded-xl shadow p-6 flex-1">
               <h3 className="text-lg font-semibold text-gray-700 mb-4">Top 10 AMC</h3>
               <div className="w-full h-[20rem]">
@@ -377,7 +435,6 @@ export const Dashboard = () => {
                     layout="vertical"
                     data={safeTopAMC}
                     margin={{ top: 10, right: 40, left: 120, bottom: 10 }}
-                    barCategoryGap="20%"
                   >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" />
@@ -389,18 +446,12 @@ export const Dashboard = () => {
                       axisLine={false}
                       interval={0}
                     />
-                    <Tooltip
-                      formatter={(value: ValueType) =>
-                        `₹${Number(value).toLocaleString('en-IN')}`
-                      }
-                    />
+                    <Tooltip formatter={(value: ValueType) => `₹${Number(value).toLocaleString('en-IN')}`} />
                     <Bar dataKey="value" fill="#2563eb" barSize={28} radius={[4, 4, 4, 4]}>
                       <LabelList
                         dataKey="value"
                         position="right"
-                        formatter={(label: React.ReactNode) =>
-                          `₹${Number(label ?? 0).toLocaleString('en-IN')}`
-                        }
+                        formatter={(label) => `₹${Number(label ?? 0).toLocaleString('en-IN')}`}
                         fontSize={11}
                       />
                     </Bar>
@@ -409,18 +460,15 @@ export const Dashboard = () => {
               </div>
             </div>
 
-            {/* Top 10 Categories */}
+            {/* Top Categories */}
             <div className="bg-white rounded-xl shadow p-6 flex-1">
-              <h3 className="text-lg font-semibold text-gray-700 mb-4">
-                Top 10 Categories (MF)
-              </h3>
+              <h3 className="text-lg font-semibold text-gray-700 mb-4">Top 10 Categories (MF)</h3>
               <div className="w-full h-[20rem]">
                 <ResponsiveContainer width="100%">
                   <BarChart
                     layout="vertical"
                     data={safeTopCategory}
                     margin={{ top: 10, right: 40, left: 120, bottom: 10 }}
-                    barCategoryGap="20%"
                   >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" />
@@ -432,18 +480,12 @@ export const Dashboard = () => {
                       axisLine={false}
                       interval={0}
                     />
-                    <Tooltip
-                      formatter={(value: ValueType) =>
-                        `₹${Number(value).toLocaleString('en-IN')}`
-                      }
-                    />
+                    <Tooltip formatter={(value: ValueType) => `₹${Number(value).toLocaleString('en-IN')}`} />
                     <Bar dataKey="value" fill="#6b7280" barSize={28} radius={[4, 4, 4, 4]}>
                       <LabelList
                         dataKey="value"
                         position="right"
-                        formatter={(label: React.ReactNode) =>
-                          `₹${Number(label ?? 0).toLocaleString('en-IN')}`
-                        }
+                        formatter={(label) => `₹${Number(label ?? 0).toLocaleString('en-IN')}`}
                         fontSize={11}
                       />
                     </Bar>
@@ -451,6 +493,7 @@ export const Dashboard = () => {
                 </ResponsiveContainer>
               </div>
             </div>
+
           </div>
         </div>
 
