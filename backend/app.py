@@ -406,7 +406,22 @@ def dashboard_data():
         if str(h.get("type", "")).lower() in {"equity", "share", "shares", "stock", "stocks"}
     )
 
-    total_value = mf_value + equity_value
+    nps_value = sum(
+        float(h.get("valuation") or 0)
+        for h in holdings
+        if str(h.get("type", "")).lower() in {"nps"}
+    )
+    govsec_value = sum(
+        float(h.get("valuation") or 0)
+        for h in holdings
+        if str(h.get("type", "")).lower() in {"govt security"}
+    )
+    corpbonds_value = sum(
+        float(h.get("valuation") or 0)
+        for h in holdings
+        if str(h.get("type", "")).lower() in {"corporate bond"}
+    )
+    total_value = mf_value + equity_value + nps_value + govsec_value +corpbonds_value
 
     profit = mf_value - mf_invested
     profit_percent = (profit / mf_invested * 100) if mf_invested > 0 else 0
@@ -448,7 +463,7 @@ def dashboard_data():
         "SMALL", "CAP", "LARGE", "MID", "OPPORTUNITIES", "OPPORTUNITY", "YIELD",
         "STRATEGY", "COMMODITIES", "INFRASTRUCTURE", "SERVICES", "BFSI",
         "DIVIDEND", "CONSUMPTION", "ESG", "BANKING", "FINANCIAL", "FLEXI",
-        "FLEXI CAP", "FLEXI-CAP"
+        "FLEXI CAP", "FLEXI-CAP","TIER"
     }
 
     known_amcs = [
@@ -532,7 +547,7 @@ def dashboard_data():
     # EXCLUDE SHARES from AMC summary
     for h in holdings:
         # Skip if it's equity/shares
-        if str(h.get("type", "")).lower() in {"equity", "share", "shares", "stock", "stocks"}:
+        if str(h.get("type", "")).lower() in {"equity", "share", "shares", "stock", "stocks","govt security","nps","corporate bond"}:
             continue
             
         fund_name = h.get("fund_name") or ""
@@ -554,7 +569,7 @@ def dashboard_data():
     subcat_summary = {}
     for h in holdings:
         # Skip if it's equity/shares
-        if str(h.get("type", "")).lower() in {"equity", "share", "shares", "stock", "stocks"}:
+        if str(h.get("type", "")).lower() in {"shares", "share", "equity", "stock", "stocks", "govt security", "nps","corporate bond"}:
             continue
             
         sub = h.get("sub_category") or "Unclassified"
@@ -819,6 +834,7 @@ def portfolio_with_members(portfolio_id):
     known_amcs = sorted([k.upper() for k in known_amcs], key=lambda x: -len(x))
 
     def extract_amc_name(fund_name: str):
+        skip_categories = {"shares", "government securities", "nps","corporate bond"}
         """Robust AMC extraction with multiple fallbacks"""
         if not fund_name:
             return "OTHERS"
@@ -870,9 +886,10 @@ def portfolio_with_members(portfolio_id):
         return "OTHERS"
 
     # EXCLUDE SHARES from AMC summary
+    skip_categories = {"shares", "government securities", "nps","corporate bond"}
     for h in all_holdings:
         # Skip if it's shares/equity
-        if h.get("category") == "Shares":
+        if str(h.get("category", "")).lower() in skip_categories:
             continue
             
         fund_name = h.get("company") or ""
@@ -892,7 +909,7 @@ def portfolio_with_members(portfolio_id):
     subcat_summary = {}
     for h in all_holdings:
         # Skip if it's shares/equity
-        if h.get("category") == "Shares":
+        if str(h.get("category", "")).lower() in skip_categories:
             continue
             
         sub = h["sub_category"]
@@ -1078,6 +1095,8 @@ def add_family_member():
 
     conn = get_db_conn()
     cur = conn.cursor()
+
+    # Get family_id
     cur.execute("SELECT family_id FROM users WHERE user_id = %s", (user_id,))
     row = cur.fetchone()
     if not row:
@@ -1085,8 +1104,7 @@ def add_family_member():
         conn.close()
         return jsonify({"error": "User not found"}), 404
 
-    # ✅ Extract family_id safely from tuple or dict
-    family_id = row["family_id"] if isinstance(row, dict) else row[0]
+    family_id = row[0] if isinstance(row, tuple) else row["family_id"]
 
     data = request.get_json() or {}
     name = (data.get("name") or "").strip()
@@ -1097,20 +1115,35 @@ def add_family_member():
         return jsonify({"error": "Name is required"}), 400
 
     try:
-        cur.execute(
-            """
-            INSERT INTO family_members (family_id, name, email, phone, created_at)
-            VALUES (%s, %s, %s, %s, NOW())
-            RETURNING member_id
-            """,
-            (family_id, name, email or None, phone or None),
+        # 1️⃣ Get next member_id per family
+        cur.execute("""
+            SELECT COALESCE(MAX(member_id), 0) + 1
+            FROM family_members
+            WHERE family_id = %s
+        """, (family_id,))
+        
+        row_member = cur.fetchone()
+        next_member_id = (
+            row_member[0] if isinstance(row_member, tuple)
+            else list(row_member.values())[0]
         )
+
+        # 2️⃣ Insert
+        cur.execute("""
+            INSERT INTO family_members (
+                family_id, member_id, name, email, phone, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, NOW())
+            RETURNING member_id
+        """, (family_id, next_member_id, name, email or None, phone or None))
+
         result = cur.fetchone()
+        member_id = (
+            result[0] if isinstance(result, tuple)
+            else result["member_id"]
+        )
+
         conn.commit()
-
-        # ✅ Extract member_id from dict or tuple
-        member_id = result["member_id"] if isinstance(result, dict) else result[0]
-
         cur.close()
         conn.close()
 
@@ -1131,6 +1164,7 @@ def add_family_member():
         cur.close()
         conn.close()
         return jsonify({"error": str(e)}), 500
+
 #--------------------delete-member----------------------
 @app.route("/family/delete-member/<int:member_id>", methods=["DELETE"])
 def delete_family_member(member_id):
@@ -1542,7 +1576,6 @@ def admin_perform_request_handler(req_id):
     conn = get_db_conn()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    # fetch service request row
     cur.execute("SELECT * FROM service_requests WHERE id = %s", (req_id,))
     req_row = cur.fetchone()
     if not req_row:
@@ -1552,38 +1585,106 @@ def admin_perform_request_handler(req_id):
 
     request_type = req_row["request_type"]
     user_id = req_row["user_id"]
+    member_id = req_row.get("member_id")   # this can be None
 
     try:
-        # Change Email
+        # -----------------------------------------
+        # 📧 CHANGE EMAIL (family member + user)
+        # -----------------------------------------
         if request_type == "Change Email":
             new_email = payload.get("new_email")
             if not new_email:
-                return jsonify({"error": "new_email is required for Change Email"}), 400
-            cur.execute("UPDATE users SET email = %s WHERE user_id = %s", (new_email, user_id))
+                return jsonify({"error": "new_email is required"}), 400
 
-        # Change Phone
+            # If request targets a FAMILY MEMBER
+            if req_row.get("member_id"):
+                member_user_id = req_row["member_id"]  # user_id of the family member
+
+                # Fetch the requesting user's family_id
+                cur.execute("SELECT family_id FROM users WHERE user_id = %s", (user_id,))
+                user_family_row = cur.fetchone()
+
+                if not user_family_row:
+                    return jsonify({"error": "Request user not found"}), 404
+
+                family_id = user_family_row["family_id"]
+
+                # Look up the family member by BOTH family_id + member_id
+                cur.execute("""
+                    SELECT * FROM family_members
+                    WHERE family_id = %s AND member_id = %s
+                """, (family_id, member_user_id))
+                
+                fm = cur.fetchone()
+
+                if not fm:
+                    return jsonify({"error": "Family member not found in this family"}), 404
+
+                # Update the family member's email
+                cur.execute("""
+                    UPDATE family_members
+                    SET email = %s
+                    WHERE family_id = %s AND member_id = %s
+                """, (new_email, family_id, member_user_id))
+
+            else:
+                # No member_id → update the requesting user's email
+                cur.execute("UPDATE users SET email = %s WHERE user_id = %s",
+                    (new_email, user_id))
+
+        # ---------- CHANGE PHONE (FIXED) ----------
         elif request_type == "Change Phone":
             new_phone = payload.get("new_phone")
             if not new_phone:
-                return jsonify({"error": "new_phone is required for Change Phone"}), 400
-            cur.execute("UPDATE users SET phone = %s WHERE user_id = %s", (new_phone, user_id))
+                return jsonify({"error": "new_phone is required"}), 400
 
-        # Portfolio Update — admin provides portfolio_entry_id and fields
+            if req_row.get("member_id"):
+                member_user_id = req_row["member_id"]
+
+                # Get family_id of the requesting user
+                cur.execute("SELECT family_id FROM users WHERE user_id = %s", (user_id,))
+                fam = cur.fetchone()
+                if not fam:
+                    return jsonify({"error": "User family not found"}), 404
+
+                family_id = fam["family_id"]
+
+                # Validate the family member exists in this family
+                cur.execute("""
+                    SELECT * FROM family_members
+                    WHERE family_id = %s AND member_id = %s
+                """, (family_id, member_user_id))
+                fm = cur.fetchone()
+
+                if not fm:
+                    return jsonify({"error": "Family member not found in this family"}), 404
+
+                # Update phone
+                cur.execute("""
+                    UPDATE family_members
+                    SET phone = %s
+                    WHERE family_id = %s AND member_id = %s
+                """, (new_phone, family_id, member_user_id))
+
+            else:
+                # Update user's own phone
+                cur.execute("UPDATE users SET phone = %s WHERE user_id = %s",
+                            (new_phone, user_id))
+
+        # ---------- PORTFOLIO UPDATE ----------
         elif request_type == "Portfolio Update":
             portfolio_entry_id = payload.get("portfolio_entry_id")
             fields = payload.get("fields", {})
-            if not portfolio_entry_id or not isinstance(fields, dict) or not fields:
-                return jsonify({"error": "portfolio_entry_id and fields are required for Portfolio Update"}), 400
+            if not portfolio_entry_id or not fields:
+                return jsonify({"error": "portfolio_entry_id and fields are required"}), 400
 
-            # fetch entry and validate it belongs to same user
             cur.execute("SELECT * FROM portfolios WHERE id = %s", (portfolio_entry_id,))
             p = cur.fetchone()
             if not p:
                 return jsonify({"error": "Portfolio entry not found"}), 404
             if p["user_id"] != user_id:
-                return jsonify({"error": "Portfolio entry does not belong to the request user"}), 403
+                return jsonify({"error": "Portfolio entry does not belong to user"}), 403
 
-            # build safe set clause using allowed columns only
             set_clauses = []
             values = []
             for k, v in fields.items():
@@ -1593,30 +1694,30 @@ def admin_perform_request_handler(req_id):
                 values.append(v)
 
             if not set_clauses:
-                return jsonify({"error": "No valid fields to update"}), 400
+                return jsonify({"error": "No valid fields"}), 400
 
             values.append(portfolio_entry_id)
-            sql = f"UPDATE portfolios SET {', '.join(set_clauses)}, updated_at = NOW() WHERE id = %s"
+            sql = f"UPDATE portfolios SET {', '.join(set_clauses)} WHERE id = %s"
             cur.execute(sql, tuple(values))
 
-        # General Query (no DB changes besides admin_description)
         elif request_type == "General Query":
             pass
 
         else:
-            return jsonify({"error": f"Unsupported request type: {request_type}"}), 400
+            return jsonify({"error": f"Unsupported request type {request_type}"}), 400
 
-        # mark service request completed and store admin_description
+        # Mark completed
         cur.execute("""
             UPDATE service_requests
             SET status = 'completed',
-                admin_description = COALESCE(%s, admin_description),
-                updated_at = NOW()
+                admin_description = COALESCE(%s, admin_description)
             WHERE id = %s
             RETURNING id, status
         """, (admin_desc, req_id))
+
         updated = cur.fetchone()
         conn.commit()
+
     except Exception as e:
         conn.rollback()
         cur.close()
