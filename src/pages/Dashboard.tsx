@@ -246,82 +246,85 @@ export const Dashboard = () => {
     <Layout>
       <div id="dashboard-pdf" className="space-y-6 p-4 bg-white">
 
-        {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-800">Dashboard</h1>
+      {/* Header */}
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        
+        {/* Left Section (Title + User + Buttons) */}
+        <div>
+          <h1 className="text-3xl font-bold text-gray-800">Dashboard</h1>
 
-            {user?.email && (
-              <p className="text-sm text-gray-500 mt-1">
-                Logged in as <span className="font-medium">{user.email}</span>
-              </p>
-            )}
+          {user?.email && (
+            <p className="text-sm text-gray-500 mt-1">
+              Logged in as <span className="font-medium">{user.email}</span>
+            </p>
+          )}
 
+          {/* BUTTON ROW */}
+          <div className="flex items-center gap-3 mt-4">
             {/* Download PDF */}
             <button
               onClick={downloadPDF}
-              className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition"
             >
               <Download size={16} /> Download PDF
             </button>
 
-            {/* NEW BUTTON - Raise Service Request */}
+            {/* Raise Service Request */}
             <button
               onClick={() => navigate('/service-requests')}
-              className="mt-4 ml-3 inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg shadow hover:bg-green-700 transition"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg shadow hover:bg-green-700 transition"
             >
               Raise Service Request
             </button>
-
-          </div>
-
-          {/* Member Filter Dropdown */}
-          <div className="relative inline-block text-left" ref={dropdownRef}>
-            <button
-              onClick={() => setDropdownOpen((prev) => !prev)}
-              className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-md shadow-sm bg-white hover:bg-gray-50"
-            >
-              <Users size={16} />
-              <span>{selectedText}</span>
-              <ChevronDown size={16} />
-            </button>
-
-            {dropdownOpen && (
-              <div className="absolute mt-2 w-64 bg-white border rounded-md shadow-lg z-50">
-                <div className="p-3 space-y-2 max-h-64 overflow-y-auto">
-                  <label className="flex items-center gap-2 text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes('user')}
-                      onChange={() => toggleSelection('user')}
-                    />
-                    My Holdings
-                  </label>
-
-                  <div className="border-t my-2"></div>
-
-                  {familyMembers.map((m) => {
-                    const id = m.id ?? m.member_id;
-                    return (
-                      <label
-                        key={id}
-                        className="flex items-center gap-2 text-sm text-gray-700"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(String(id))}
-                          onChange={() => toggleSelection(String(id))}
-                        />
-                        {m.name}
-                      </label>
-                    );
-                  })}
-
-                </div>
-              </div>
-            )}
           </div>
         </div>
+
+        {/* Right Section (Dropdown) */}
+        <div className="relative inline-block text-left" ref={dropdownRef}>
+          <button
+            onClick={() => setDropdownOpen((prev) => !prev)}
+            className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-md shadow-sm bg-white hover:bg-gray-50"
+          >
+            <Users size={16} />
+            <span>{selectedText}</span>
+            <ChevronDown size={16} />
+          </button>
+
+          {dropdownOpen && (
+            <div className="absolute mt-2 w-64 bg-white border rounded-md shadow-lg z-50">
+              <div className="p-3 space-y-2 max-h-64 overflow-y-auto">
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes('user')}
+                    onChange={() => toggleSelection('user')}
+                  />
+                  My Holdings
+                </label>
+
+                <div className="border-t my-2"></div>
+
+                {familyMembers.map((m) => {
+                  const id = m.id ?? m.member_id;
+                  return (
+                    <label
+                      key={id}
+                      className="flex items-center gap-2 text-sm text-gray-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(String(id))}
+                        onChange={() => toggleSelection(String(id))}
+                      />
+                      {m.name}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">

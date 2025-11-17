@@ -1269,55 +1269,60 @@ def session_user():
             "role": user["role_name"]
         }
     }), 200
-
 # -----------------------------------------------------
-# SERVICE REQUESTS (USER + ADMIN)
+# USER SIDE — SERVICE REQUESTS
 # -----------------------------------------------------
 
-# ---------- USER: Create New Request ----------
+# ---------- USER: Create a request ----------
 @app.route("/service-requests", methods=["POST"])
 @login_required
 def create_service_request():
-    user_id = session["user_id"]
     data = request.get_json() or {}
+    user_id = session.get("user_id")
+    family_id = session.get("family_id")
 
     req_type = data.get("request_type")
-    desc = data.get("description")
+    description = data.get("description", "")
+    member_id = data.get("member_id")  # optional for "Self"
 
-    if not req_type:
-        return jsonify({"error": "request_type is required"}), 400
+    valid_types = ["Change Email", "Change Phone", "Portfolio Update", "General Query"]
+    if req_type not in valid_types:
+        return jsonify({"error": "Invalid request type"}), 400
 
     conn = get_db_conn()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     cur.execute("""
-        INSERT INTO service_requests (user_id, request_type, description, status, created_at)
-        VALUES (%s, %s, %s, 'pending', NOW())
-        RETURNING id, request_id, request_type, description, status, created_at
-    """, (user_id, req_type, desc))
+        INSERT INTO service_requests (user_id, member_id, request_type, description, status)
+        VALUES (%s, %s, %s, %s, 'pending')
+        RETURNING *
+    """, (user_id, member_id, req_type, description))
 
-    row = cur.fetchone()
+    new_req = cur.fetchone()
     conn.commit()
     cur.close()
     conn.close()
 
-    return jsonify(row), 201
+    return jsonify(new_req), 201
 
 
-# ---------- USER: Get My Requests ----------
+# ---------- USER: Get own requests ----------
 @app.route("/service-requests", methods=["GET"])
 @login_required
-def get_my_service_requests():
-    user_id = session["user_id"]
+def user_get_requests():
+    user_id = session.get("user_id")
 
     conn = get_db_conn()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     cur.execute("""
-        SELECT id, request_id, request_type, description, status, created_at
-        FROM service_requests
-        WHERE user_id = %s
-        ORDER BY created_at DESC
+        SELECT 
+            sr.*, 
+            COALESCE(fm.name, 'Self') AS member_name
+        FROM service_requests sr
+        LEFT JOIN family_members fm ON fm.id = sr.member_id
+        WHERE sr.user_id = %s
+        ORDER BY sr.created_at DESC
     """, (user_id,))
 
     rows = cur.fetchall()
@@ -1327,18 +1332,18 @@ def get_my_service_requests():
     return jsonify(rows), 200
 
 
-# ---------- USER: Delete Request ----------
+# ---------- USER: Delete request (only pending) ----------
 @app.route("/service-requests/<int:req_id>", methods=["DELETE"])
 @login_required
-def delete_my_service_request(req_id):
-    user_id = session["user_id"]
+def user_delete_request(req_id):
+    user_id = session.get("user_id")
 
     conn = get_db_conn()
     cur = conn.cursor()
 
     cur.execute("""
         DELETE FROM service_requests 
-        WHERE id = %s AND user_id = %s
+        WHERE id = %s AND user_id = %s AND status = 'pending'
         RETURNING id
     """, (req_id, user_id))
 
@@ -1348,13 +1353,13 @@ def delete_my_service_request(req_id):
     conn.close()
 
     if not deleted:
-        return jsonify({"error": "Request not found or unauthorized"}), 404
+        return jsonify({"error": "Cannot delete this request"}), 400
 
-    return jsonify({"message": "Request deleted"}), 200
+    return jsonify({"message": "Deleted"}), 200
 
 
 # -----------------------------------------------------
-# ADMIN SIDE
+# ADMIN SIDE — FULLY UPDATED
 # -----------------------------------------------------
 
 def admin_required(f):
@@ -1365,25 +1370,35 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated
 
-
-# ---------- ADMIN: View All Requests ----------
 @app.route("/admin/service-requests", methods=["GET"])
 @login_required
+@admin_required
 def admin_get_requests():
-    if session.get("role") != "admin":
-        return jsonify({"error": "Admin only"}), 403
+    req_type = request.args.get("type")
 
     conn = get_db_conn()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    cur.execute("""
-        SELECT sr.id, sr.request_id, sr.request_type, sr.description, sr.status, sr.created_at,
-               u.email AS user_name
+    sql = """
+        SELECT 
+            sr.id, sr.user_id, sr.member_id,
+            sr.request_type, sr.description,
+            sr.status, sr.created_at, sr.admin_description,
+            u.email AS user_name,
+            COALESCE(fm.name, 'Self') AS member_name
         FROM service_requests sr
         JOIN users u ON u.user_id = sr.user_id
-        ORDER BY sr.created_at DESC
-    """)
+        LEFT JOIN family_members fm ON fm.id = sr.member_id
+    """
+    params = []
 
+    if req_type:
+        sql += " WHERE sr.request_type = %s"
+        params.append(req_type)
+
+    sql += " ORDER BY sr.created_at DESC"
+
+    cur.execute(sql, params)
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -1391,15 +1406,13 @@ def admin_get_requests():
     return jsonify(rows), 200
 
 
-# ---------- ADMIN: Update Status ----------
 @app.route("/admin/service-requests/<int:req_id>", methods=["PUT"])
 @login_required
+@admin_required
 def admin_update_request(req_id):
-    if session.get("role") != "admin":
-        return jsonify({"error": "Admin only"}), 403
-
     data = request.get_json() or {}
     status = data.get("status")
+    admin_description = data.get("admin_description")
 
     if status not in ["pending", "processing", "completed", "rejected"]:
         return jsonify({"error": "Invalid status"}), 400
@@ -1409,10 +1422,11 @@ def admin_update_request(req_id):
 
     cur.execute("""
         UPDATE service_requests
-        SET status = %s
+        SET status = %s,
+            admin_description = COALESCE(%s, admin_description)
         WHERE id = %s
         RETURNING id
-    """, (status, req_id))
+    """, (status, admin_description, req_id))
 
     updated = cur.fetchone()
     conn.commit()
@@ -1422,24 +1436,197 @@ def admin_update_request(req_id):
     if not updated:
         return jsonify({"error": "Request not found"}), 404
 
-    return jsonify({"message": "Updated successfully"}), 200
+    return jsonify({"message": "Updated"}), 200
 
 
-
-# ---------- ADMIN: Delete Any Request ----------
-@app.route("/admin/service-requests/<int:id>", methods=["DELETE"])
+@app.route("/admin/service-requests/<int:req_id>", methods=["DELETE"])
+@login_required
 @admin_required
-def admin_delete_request(id):
+def admin_delete_request(req_id):
     conn = get_db_conn()
     cur = conn.cursor()
 
-    cur.execute("DELETE FROM service_requests WHERE id = %s", (id,))
-    conn.commit()
+    cur.execute("DELETE FROM service_requests WHERE id = %s RETURNING id", (req_id,))
+    deleted = cur.fetchone()
 
+    conn.commit()
     cur.close()
     conn.close()
 
-    return jsonify({"message": "Request deleted"}), 200
+    if not deleted:
+        return jsonify({"error": "Request not found"}), 404
+
+    return jsonify({"message": "Deleted"}), 200
+
+# -------------------------
+# Admin helper / allowed fields
+# -------------------------
+ALLOWED_PORTFOLIO_COLUMNS = {
+    "member_id",
+    "valuation",
+    "fund_name",
+    "booking_date",
+    "isin_no",
+    "transaction_no",
+    "type",
+    "units",
+    "invested_amount",
+    "nav",
+    "category",
+    "sub_category",
+}
+
+# -------------------------
+# GET distinct portfolio_id values for a user
+# -------------------------
+@app.route("/admin/user/<int:user_id>/portfolio-ids", methods=["GET"])
+@login_required
+@admin_required
+def admin_get_user_portfolio_ids(user_id):
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("""
+        SELECT DISTINCT portfolio_id
+        FROM portfolios
+        WHERE user_id = %s
+        ORDER BY portfolio_id ASC
+    """, (user_id,))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    # return list of ints
+    ids = [r["portfolio_id"] for r in rows]
+    return jsonify({"portfolio_ids": ids}), 200
+
+# -------------------------
+# GET all rows for a given portfolio_id (for that user)
+# Example: /admin/user/7/portfolios?portfolio_id=1
+# -------------------------
+@app.route("/admin/user/<int:user_id>/portfolios", methods=["GET"])
+@login_required
+@admin_required
+def admin_get_user_portfolios_by_portfolio_id(user_id):
+    portfolio_id = request.args.get("portfolio_id")
+    if not portfolio_id:
+        return jsonify({"error": "portfolio_id query param required"}), 400
+
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("""
+        SELECT id, portfolio_id, user_id, member_id, valuation, fund_name, booking_date,
+               isin_no, transaction_no, created_at, type, units, invested_amount, nav, category, sub_category
+        FROM portfolios
+        WHERE user_id = %s AND portfolio_id = %s
+        ORDER BY id ASC
+    """, (user_id, portfolio_id))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return jsonify(rows), 200
+
+# -------------------------
+# Admin perform endpoint (single unified) — supports portfolio update payload
+# Payload cases:
+# - Change Email: {"new_email": "...", "admin_description": "..."}
+# - Change Phone: {"new_phone": "..."}
+# - Portfolio Update: {"portfolio_entry_id": <id>, "fields": {k:v,...}, "admin_description": "..."}
+# - General Query: {"admin_description": "..."}
+# -------------------------
+@app.route("/admin/service-requests/<int:req_id>/perform", methods=["POST"])
+@login_required
+@admin_required
+def admin_perform_request_handler(req_id):
+    payload = request.get_json() or {}
+    admin_desc = payload.get("admin_description")
+
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    # fetch service request row
+    cur.execute("SELECT * FROM service_requests WHERE id = %s", (req_id,))
+    req_row = cur.fetchone()
+    if not req_row:
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Request not found"}), 404
+
+    request_type = req_row["request_type"]
+    user_id = req_row["user_id"]
+
+    try:
+        # Change Email
+        if request_type == "Change Email":
+            new_email = payload.get("new_email")
+            if not new_email:
+                return jsonify({"error": "new_email is required for Change Email"}), 400
+            cur.execute("UPDATE users SET email = %s WHERE user_id = %s", (new_email, user_id))
+
+        # Change Phone
+        elif request_type == "Change Phone":
+            new_phone = payload.get("new_phone")
+            if not new_phone:
+                return jsonify({"error": "new_phone is required for Change Phone"}), 400
+            cur.execute("UPDATE users SET phone = %s WHERE user_id = %s", (new_phone, user_id))
+
+        # Portfolio Update — admin provides portfolio_entry_id and fields
+        elif request_type == "Portfolio Update":
+            portfolio_entry_id = payload.get("portfolio_entry_id")
+            fields = payload.get("fields", {})
+            if not portfolio_entry_id or not isinstance(fields, dict) or not fields:
+                return jsonify({"error": "portfolio_entry_id and fields are required for Portfolio Update"}), 400
+
+            # fetch entry and validate it belongs to same user
+            cur.execute("SELECT * FROM portfolios WHERE id = %s", (portfolio_entry_id,))
+            p = cur.fetchone()
+            if not p:
+                return jsonify({"error": "Portfolio entry not found"}), 404
+            if p["user_id"] != user_id:
+                return jsonify({"error": "Portfolio entry does not belong to the request user"}), 403
+
+            # build safe set clause using allowed columns only
+            set_clauses = []
+            values = []
+            for k, v in fields.items():
+                if k not in ALLOWED_PORTFOLIO_COLUMNS:
+                    continue
+                set_clauses.append(f"{k} = %s")
+                values.append(v)
+
+            if not set_clauses:
+                return jsonify({"error": "No valid fields to update"}), 400
+
+            values.append(portfolio_entry_id)
+            sql = f"UPDATE portfolios SET {', '.join(set_clauses)}, updated_at = NOW() WHERE id = %s"
+            cur.execute(sql, tuple(values))
+
+        # General Query (no DB changes besides admin_description)
+        elif request_type == "General Query":
+            pass
+
+        else:
+            return jsonify({"error": f"Unsupported request type: {request_type}"}), 400
+
+        # mark service request completed and store admin_description
+        cur.execute("""
+            UPDATE service_requests
+            SET status = 'completed',
+                admin_description = COALESCE(%s, admin_description),
+                updated_at = NOW()
+            WHERE id = %s
+            RETURNING id, status
+        """, (admin_desc, req_id))
+        updated = cur.fetchone()
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Error performing request", "detail": str(e)}), 500
+
+    cur.close()
+    conn.close()
+    return jsonify({"message": "Request performed and marked completed", "request": updated}), 200
+
 
 # ---------- Serve React ----------
 @app.errorhandler(404)

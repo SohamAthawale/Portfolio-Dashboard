@@ -10,6 +10,8 @@ import { AdminDashboard } from './pages/AdminDashboard';
 import { ServiceRequests } from './pages/ServiceRequests';
 import { AdminServiceRequests} from './pages/AdminServiceRequests';
 import { ProfilePage } from './pages/ProfilePage'; // ✅ NEW IMPORT
+import { AdminProfilePage } from "./pages/AdminProfilePage";
+import { AdminPortfolioEditor } from "./pages/AdminPortfolioEditor";
 
 /* -------------------------------------------------
    ✅ ROLE-BASED DASHBOARD WRAPPER
@@ -100,7 +102,22 @@ function App() {
               </ProtectedRoute>
             }
           />
-
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/edit-portfolio/:userId/:requestId"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminPortfolioEditor />
+              </ProtectedRoute>
+            }
+          />
           {/* ---------- FALLBACK ---------- */}
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
