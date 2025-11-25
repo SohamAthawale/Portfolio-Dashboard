@@ -12,6 +12,7 @@ import { AdminServiceRequests} from './pages/AdminServiceRequests';
 import { ProfilePage } from './pages/ProfilePage'; // ✅ NEW IMPORT
 import { AdminProfilePage } from "./pages/AdminProfilePage";
 import { AdminPortfolioEditor } from "./pages/AdminPortfolioEditor";
+import { AdminUserDetail } from "./pages/AdminUserDetails";
 
 /* -------------------------------------------------
    ✅ ROLE-BASED DASHBOARD WRAPPER
@@ -118,6 +119,15 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/admin/user/:userId"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminUserDetail />
+              </ProtectedRoute>
+            }
+          />
+
           {/* ---------- FALLBACK ---------- */}
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />

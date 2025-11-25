@@ -1,80 +1,298 @@
-// AdminDashboard.tsx
-import { useEffect, useState } from "react";
+// src/pages/AdminDashboard.tsx
+import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from "recharts";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
 
-export const AdminDashboard = () => {
-  const [requests, setRequests] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
+// ----------------------------
+// Types
+// ----------------------------
+interface UserRow {
+  user_id: number;
+  email: string;
+  phone?: string | null;
+  created_at?: string | null;
+}
+
+interface PortfolioStats {
+  total_portfolios: number;
+  total_holdings: number;
+  total_invested: number;
+  total_valuation: number;
+  per_user?: any[];
+  per_member?: any[];
+}
+
+interface RequestStats {
+  total: number;
+  monthly: { month: string; count: number }[];
+  status: Record<string, number>;
+}
+
+interface AdminStats {
+  users: {
+    total: number;
+    list: UserRow[];
+  };
+  families: number;
+  family_members: number;
+  portfolio_stats: PortfolioStats;
+  requests: RequestStats;
+}
+
+// ----------------------------
+// Helpers
+// ----------------------------
+const formatCurrency = (v: number) =>
+  "₹" + Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+
+// Recharts requires full margin object for correct typing
+const DEFAULT_MARGIN = { top: 20, right: 20, bottom: 20, left: 20 };
+
+// ----------------------------
+// Component
+// ----------------------------
+export const AdminDashboard: React.FC = () => {
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<AdminStats | null>(null);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/admin/service-requests`, { credentials: "include" });
-        const data = await res.json();
-        if (res.ok) setRequests(data);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, []);
+    let cancelled = false;
+    async function loadStats() {
+      setLoading(true);
+      setError(null);
 
-  const types = ["Change Email", "Change Phone", "Portfolio Update", "General Query"];
-  const statsFor = (t: string) => {
-    const filtered = requests.filter((r) => r.request_type === t);
-    return {
-      total: filtered.length,
-      pending: filtered.filter((r) => r.status === "pending").length,
-      completed: filtered.filter((r) => r.status === "completed").length,
+      try {
+        const res = await fetch(`${API_BASE}/admin/stats`, { credentials: "include" });
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(`Stats fetch failed (${res.status}): ${text || res.statusText}`);
+        }
+        const data = await res.json();
+        if (!cancelled) {
+          setStats(data as AdminStats);
+        }
+      } catch (err: any) {
+        console.error("Failed to load admin stats", err);
+        if (!cancelled) {
+          setError(err?.message || "Failed to load stats");
+          setStats(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadStats();
+    return () => {
+      cancelled = true;
     };
-  };
+  }, []); // run once on mount
+
+  if (loading)
+    return (
+      <Layout>
+        <div className="p-8">Loading admin dashboard...</div>
+      </Layout>
+    );
+
+  if (error)
+    return (
+      <Layout>
+        <div className="p-8">
+          <div className="bg-red-50 text-red-700 p-4 rounded-lg">
+            <strong>Error:</strong> {error}
+          </div>
+        </div>
+      </Layout>
+    );
+
+  // Defensive fallbacks
+  const users = stats?.users?.list ?? [];
+  const totalUsers = stats?.users?.total ?? 0;
+  const portfolioStats = stats?.portfolio_stats ?? ({} as PortfolioStats);
+  const requests = stats?.requests ?? { total: 0, monthly: [], status: {} };
+
+  // Prepare data for charts
+  const monthlyRequests = requests.monthly ?? [];
+  // Pie: status breakdown (service requests) as example
+  const statusPie = Object.entries(requests.status ?? {}).map(([name, value]) => ({
+    name,
+    value,
+  }));
+
+  // Top categories or other pie data: we don't have categories at admin/stats level.
+  // We'll show request status pie and a per-user portfolio counts bar (if available).
+  const perUserData =
+    (portfolioStats.per_user ?? []).map((u: any) => ({
+      user_id: u.user_id,
+      portfolios: u.total_portfolios ?? 0,
+      holdings: u.total_holdings ?? 0,
+    })) ?? [];
+
+  // Limit perUserData length for performance (top 10 by portfolios)
+  const perUserTop = [...perUserData]
+    .sort((a, b) => (b.portfolios ?? 0) - (a.portfolios ?? 0))
+    .slice(0, 10);
+
+  // Color palette
+  const COLORS = ["#4F46E5", "#10B981", "#F43F5E", "#F59E0B", "#3B82F6", "#7C3AED", "#06B6D4"];
 
   return (
     <Layout>
-      <motion.div className="p-8 space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-
-        {loading ? (
-          <p>Loading...</p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            {types.map((t) => {
-              const s = statsFor(t);
-              return (
-                <motion.div
-                  key={t}
-                  whileHover={{ scale: 1.03 }}
-                  className="bg-white p-6 rounded-2xl shadow cursor-pointer"
-                  onClick={() => navigate(`/admin/service-requests?type=${encodeURIComponent(t)}`)}
-                >
-                  <div className="flex justify-between items-center">
-                    <h3 className="font-semibold">{t}</h3>
-                    <div className="text-sm text-gray-500">{s.total} total</div>
-                  </div>
-                  <div className="mt-3 flex justify-between text-sm">
-                    <div className="text-yellow-600">Pending: {s.pending}</div>
-                    <div className="text-green-600">Completed: {s.completed}</div>
-                  </div>
-                </motion.div>
-              );
-            })}
-
-            <motion.div className="bg-white p-6 rounded-2xl shadow">
-              <div className="flex justify-between">
-                <h3 className="font-semibold">All Requests</h3>
-                <div className="text-sm text-gray-500">{requests.length}</div>
-              </div>
-            </motion.div>
+      <motion.div className="p-8 space-y-8" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+          <div>
+            <div className="text-sm text-gray-600">Total users</div>
+            <div className="text-2xl font-semibold">{totalUsers}</div>
           </div>
-        )}
+        </div>
+
+        {/* Stat cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <StatCard title="Users" value={totalUsers} />
+          <StatCard title="Families" value={stats?.families ?? 0} />
+          <StatCard title="Family Members" value={stats?.family_members ?? 0} />
+          <StatCard title="Total Portfolios" value={portfolioStats.total_portfolios ?? 0} />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <StatCard title="Total Holdings" value={portfolioStats.total_holdings ?? 0} />
+          <StatCard title="Total Invested" value={formatCurrency(portfolioStats.total_invested ?? 0)} />
+          <StatCard title="Total Valuation" value={formatCurrency(portfolioStats.total_valuation ?? 0)} />
+        </div>
+
+        {/* Charts row */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Monthly requests (bar) */}
+          <div className="bg-white p-6 rounded-2xl shadow h-[380px]">
+            <h2 className="text-xl font-semibold mb-4">Monthly Service Requests</h2>
+            <ResponsiveContainer width="100%" height="85%">
+              <BarChart data={monthlyRequests ?? []} margin={DEFAULT_MARGIN}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" angle={-20} textAnchor="end" interval={0} />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#4F46E5" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Request status pie */}
+          <div className="bg-white p-6 rounded-2xl shadow h-[380px]">
+            <h2 className="text-xl font-semibold mb-4">Service Request Status</h2>
+            <ResponsiveContainer width="100%" height="85%">
+              <PieChart margin={DEFAULT_MARGIN}>
+                <Pie
+                  data={statusPie.length ? statusPie : [{ name: "none", value: 1 }]}
+                  dataKey="value"
+                  nameKey="name"
+                  outerRadius={110}
+                  innerRadius={40}
+                  label={(entry) => `${entry.name}: ${entry.value}`}
+                >
+                  {(statusPie.length ? statusPie : [{ name: "none", value: 1 }]).map((_, idx) => (
+                    <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend verticalAlign="bottom" height={36} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Per-user top bar */}
+          <div className="bg-white p-6 rounded-2xl shadow h-[380px]">
+            <h2 className="text-xl font-semibold mb-4">Top Users by Portfolios (top 10)</h2>
+            <ResponsiveContainer width="100%" height="85%">
+              <BarChart data={perUserTop} margin={{ top: 20, right: 20, bottom: 70, left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="user_id" angle={-30} textAnchor="end" interval={0} />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Bar dataKey="portfolios" fill="#10B981" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Users table */}
+        <div className="bg-white p-6 rounded-2xl shadow">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Users</h2>
+            <div className="text-sm text-gray-500">{users.length} rows</div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead>
+                <tr className="text-gray-600 border-b">
+                  <th className="py-2 px-3">User ID</th>
+                  <th className="py-2 px-3">Email</th>
+                  <th className="py-2 px-3">Phone</th>
+                  <th className="py-2 px-3">Created</th>
+                  <th className="py-2 px-3">Actions</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {users.map((u) => (
+                  <tr key={u.user_id} className="border-b hover:bg-gray-50">
+                    <td className="py-2 px-3">{u.user_id}</td>
+                    <td className="py-2 px-3">{u.email}</td>
+                    <td className="py-2 px-3">{u.phone ?? "—"}</td>
+                    <td className="py-2 px-3">{u.created_at ? new Date(u.created_at).toLocaleString() : "—"}</td>
+                    <td className="py-2 px-3">
+                      <Link
+                        to={`/admin/user/${u.user_id}`}
+                        className="text-indigo-600 hover:underline text-sm"
+                      >
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+                {users.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="py-6 text-center text-gray-500">
+                      No users found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </motion.div>
     </Layout>
   );
 };
+
+// ----------------------------
+// Small presentational helpers
+// ----------------------------
+const StatCard: React.FC<{ title: string; value: any }> = ({ title, value }) => (
+  <div className="bg-white p-5 rounded-2xl shadow min-h-[84px]">
+    <div className="text-sm text-gray-600">{title}</div>
+    <div className="text-2xl font-bold mt-2">{value}</div>
+  </div>
+);
+
+export default AdminDashboard;

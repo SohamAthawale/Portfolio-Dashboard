@@ -6,15 +6,18 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
 
 interface ServiceRequest {
   id: number;
-  request_id: number;
+  request_id?: number;
   request_type: string;
   description?: string | null;
   status: string;
   created_at: string;
+  updated_at?: string | null;
+  admin_description?: string | null;
+  member_name?: string | null;
 }
 
 interface Member {
-  member_id: number;
+  member_id: number; // per-family ID (1,2,3...)
   name: string;
 }
 
@@ -24,6 +27,7 @@ export const ServiceRequests = () => {
   const [requestType, setRequestType] = useState("");
   const [description, setDescription] = useState("");
   const [memberId, setMemberId] = useState<string>("self");
+  const [loading, setLoading] = useState<boolean>(false);
 
   // -----------------------------------
   // LOAD FAMILY MEMBERS
@@ -35,7 +39,7 @@ export const ServiceRequests = () => {
       });
       if (res.ok) {
         const data = await res.json();
-        setMembers(data);
+        setMembers(data || []);
       }
     } catch (err) {
       console.error("Failed to load members", err);
@@ -46,13 +50,19 @@ export const ServiceRequests = () => {
   // LOAD USER REQUESTS
   // -----------------------------------
   const loadRequests = async () => {
+    setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/service-requests`, {
         credentials: "include",
       });
-      if (res.ok) setRequests(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setRequests(Array.isArray(data) ? data : []);
+      }
     } catch (err) {
       console.error("Failed to load requests", err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -73,27 +83,32 @@ export const ServiceRequests = () => {
       member_id: memberId === "self" ? null : Number(memberId),
     };
 
-    const res = await fetch(`${API_BASE}/service-requests`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    try {
+      const res = await fetch(`${API_BASE}/service-requests`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    if (res.ok) {
-      setRequestType("");
-      setDescription("");
-      setMemberId("self");
-      loadRequests();
-    } else {
-      alert("Failed to submit request");
+      if (res.ok) {
+        setRequestType("");
+        setDescription("");
+        setMemberId("self");
+        loadRequests();
+      } else {
+        const body = await res.json().catch(() => null);
+        alert(body?.error || "Failed to submit request");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Network error");
     }
   };
 
   return (
     <Layout>
       <div className="p-6 space-y-6">
-
         {/* PAGE TITLE */}
         <h1 className="text-3xl font-bold text-gray-800">My Service Requests</h1>
 
@@ -151,38 +166,67 @@ export const ServiceRequests = () => {
         <div className="bg-white shadow rounded-xl p-6">
           <h2 className="text-xl font-semibold mb-4">Previous Requests</h2>
 
-          {requests.length === 0 ? (
+          {loading ? (
+            <p className="text-gray-500">Loading...</p>
+          ) : requests.length === 0 ? (
             <p className="text-gray-500">No service requests found.</p>
           ) : (
-            <table className="w-full text-sm border-collapse table-fixed">
-              <thead>
-                <tr className="border-b text-left">
-                  <th className="p-2 w-12">#</th>
-                  <th className="p-2 w-40">Type</th>
-                  <th className="p-2">Description</th>
-                  <th className="p-2 w-32">Status</th>
-                  <th className="p-2 w-48">Created</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {requests.map((req) => (
-                  <tr key={req.id} className="border-b">
-                    <td className="p-2">{req.request_id}</td>
-                    <td className="p-2">{req.request_type}</td>
-                    <td className="p-2">{req.description || "—"}</td>
-                    <td className="p-2 capitalize">{req.status}</td>
-                    <td className="p-2">
-                      {new Date(req.created_at).toLocaleString()}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b text-left">
+                    <th className="p-2 w-10">#</th>
+                    <th className="p-2 w-36">Type</th>
+                    <th className="p-2 w-64">Description</th>
+                    <th className="p-2 w-28">Status</th>
+                    <th className="p-2 w-40">Created</th>
+                    <th className="p-2 w-40">Updated</th>
+                    <th className="p-2 w-48">Admin Note</th>
+                    <th className="p-2 w-36">Member</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+
+                <tbody>
+                  {requests.map((req) => (
+                    <tr key={req.id} className="border-b">
+                      <td className="p-2 align-top">{req.request_id ?? req.id}</td>
+                      <td className="p-2 align-top">{req.request_type}</td>
+
+                      <td className="p-2 align-top whitespace-normal break-words">
+                        {req.description || "—"}
+                      </td>
+
+                      <td className="p-2 align-top capitalize">
+                        {req.status}
+                      </td>
+
+                      <td className="p-2 align-top">
+                        {new Date(req.created_at).toLocaleString()}
+                      </td>
+
+                      <td className="p-2 align-top">
+                        {req.updated_at
+                          ? new Date(req.updated_at).toLocaleString()
+                          : "—"}
+                      </td>
+
+                      <td className="p-2 align-top whitespace-normal break-words">
+                        {req.admin_description || "—"}
+                      </td>
+
+                      <td className="p-2 align-top">
+                        {req.member_name || "Self"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
-
       </div>
     </Layout>
   );
 };
+
+export default ServiceRequests;
