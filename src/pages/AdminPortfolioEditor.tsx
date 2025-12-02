@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { motion } from "framer-motion";
+import Logo from "../components/logo";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
 
@@ -166,11 +167,25 @@ export const AdminPortfolioEditor: React.FC = () => {
     <Layout>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-8">
         <div className="flex items-center justify-between mb-6">
+
+        {/* LEFT group → Logo + Title together */}
+        <div className="flex items-center gap-4">
+          <Logo className="w-44 h-auto" />
           <h1 className="text-2xl font-bold">Portfolio Editor — Admin</h1>
-          <div>
-            <button onClick={() => navigate("/admin/service-requests")} className="px-3 py-2 bg-gray-100 rounded">Back to Requests</button>
-          </div>
         </div>
+
+        {/* RIGHT group → Button */}
+        <div>
+          <button
+            onClick={() => navigate("/admin/service-requests")}
+            className="px-3 py-2 bg-gray-100 rounded"
+          >
+            Back to Requests
+          </button>
+        </div>
+
+      </div>
+
 
         <div className="bg-white rounded-xl p-6 shadow space-y-4">
           <div>

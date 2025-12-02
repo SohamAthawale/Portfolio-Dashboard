@@ -32,6 +32,7 @@ import {
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent';
+import Logo from '../components/logo';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
 
@@ -268,18 +269,24 @@ export const Dashboard = () => {
 
         {/* Header (HDFC-style minimal) */}
         <div className="flex items-start justify-between">
-          <div className="flex items-start gap-4">
-            <div className="w-39">
-              <div className="text-sm font-semibold">HDFC MUTUAL FUND</div>
-              <div className="text-xs text-gray-500">Summary Report</div>
+          
+          {/* LEFT SIDE: Logo + Titles */}
+          <div className="flex items-center gap-4">
+            <Logo className="w-40 h-auto" />
+
+            <div>
+              <div className="text-xl font-semibold">Summary Report</div>
             </div>
           </div>
 
+          {/* RIGHT SIDE: Customer + Date */}
           <div className="text-right text-sm">
             <div className="mb-1">
               <span className="font-medium">Customer Name:</span> {user?.email ?? '-'}
             </div>
-            <div className="text-xs text-gray-500">{new Date().toLocaleDateString('en-GB')}</div>
+            <div className="text-xs text-gray-500">
+              {new Date().toLocaleDateString('en-GB')}
+            </div>
           </div>
         </div>
 

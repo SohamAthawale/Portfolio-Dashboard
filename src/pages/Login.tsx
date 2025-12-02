@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Mail, TrendingUp, Lock, Phone } from 'lucide-react';
+import { Mail, Lock, Phone } from 'lucide-react';
 import { motion } from 'framer-motion';
+import Logo from "../components/logo";
 
 // ✅ Use centralized backend URL for consistency
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
@@ -70,11 +71,8 @@ export const Login = () => {
       >
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <div className="flex items-center justify-center mb-8">
-            <div className="bg-blue-600 p-3 rounded-full">
-              <TrendingUp size={32} className="text-white" />
-            </div>
+            <Logo className="w-48 h-auto" />
           </div>
-
           <h1 className="text-3xl font-bold text-center text-gray-800 mb-2">
             {isRegister ? 'Create Account' : 'Welcome Back'}
           </h1>

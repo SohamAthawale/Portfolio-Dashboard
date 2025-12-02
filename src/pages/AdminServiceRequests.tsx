@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { motion } from "framer-motion";
 import { ClipboardList, Trash2, Mail, User } from "lucide-react";
+import Logo from "../components/logo";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
 
@@ -173,6 +174,7 @@ export const AdminServiceRequests: React.FC = () => {
   return (
     <Layout>
       <div className="p-8">
+        <Logo className="w-44 mb-6 h-auto" />
         <h1 className="text-3xl font-bold mb-6">Admin - Service Requests</h1>
 
         <div className="mb-4">

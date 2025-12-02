@@ -44,7 +44,7 @@ export const Sidebar = () => {
     <aside className="w-64 bg-white border-r border-gray-200 min-h-screen fixed left-0 top-0 z-10">
       {/* Header */}
       <div className="p-6 border-b border-gray-100">
-        <h1 className="text-2xl font-bold text-gray-800">Portfolio MS</h1>
+        <h1 className="text-xl mt-3 font-bold text-gray-800">Portfolio Managment</h1>
         {user && (
           <p className="text-sm text-gray-500 mt-1">
             {user.role === 'admin' ? 'Administrator' : 'User'}

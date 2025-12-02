@@ -16,6 +16,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
+import Logo from "../components/logo";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
 
@@ -157,14 +158,21 @@ export const AdminDashboard: React.FC = () => {
   return (
     <Layout>
       <motion.div className="p-8 space-y-8" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-        <div className="flex items-center justify-between">
+       <div className="flex items-start justify-between">
+
+        {/* LEFT GROUP → Logo + Title together */}
+        <div className="flex items-center gap-4">
+          <Logo className="w-44 h-auto" />
           <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-          <div>
-            <div className="text-sm text-gray-600">Total users</div>
-            <div className="text-2xl font-semibold">{totalUsers}</div>
-          </div>
         </div>
 
+        {/* RIGHT GROUP → Total Users */}
+        <div>
+          <div className="text-sm text-gray-600">Total users</div>
+          <div className="text-2xl font-semibold">{totalUsers}</div>
+        </div>
+
+      </div>
         {/* Stat cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <StatCard title="Users" value={totalUsers} />

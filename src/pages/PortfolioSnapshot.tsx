@@ -19,6 +19,7 @@ import { ValueType, NameType } from 'recharts/types/component/DefaultTooltipCont
 
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import Logo from '../components/logo';
 
 interface MemberPortfolioData {
   label: string;
@@ -204,6 +205,8 @@ export const PortfolioSnapshot = ({ portfolioId, members: initialMembers = [], o
 
         {/* WRAPPED CONTENT FOR PDF CAPTURE */}
         <div id="portfolio-snapshot-content" className="p-2">
+          <Logo className="w-40 h-auto mb-6" />
+
           <h2 className="text-2xl font-bold mb-2 text-gray-800">
             Portfolio #{portfolioId} Snapshot
           </h2>
