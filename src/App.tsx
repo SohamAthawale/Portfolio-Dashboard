@@ -13,6 +13,7 @@ import { ProfilePage } from './pages/ProfilePage'; // ✅ NEW IMPORT
 import { AdminProfilePage } from "./pages/AdminProfilePage";
 import { AdminPortfolioEditor } from "./pages/AdminPortfolioEditor";
 import { AdminUserDetail } from "./pages/AdminUserDetails";
+import AdminPendingRegistrations from "./pages/AdminPendingRegistrations";
 
 /* -------------------------------------------------
    ✅ ROLE-BASED DASHBOARD WRAPPER
@@ -23,7 +24,7 @@ const RoleBasedDashboard: React.FC = () => {
   if (!user) return <Navigate to="/login" replace />;
 
   // 🔹 Show dashboard based on role
-  return user.role === 'admin' ? <AdminDashboard /> : <Dashboard />;
+  return user.role === 'admin' ? <AdminDashboard /> : <Dashboard /> ;
 };
 
 /* -------------------------------------------------
@@ -127,7 +128,13 @@ function App() {
               </ProtectedRoute>
             }
           />
-
+          <Route
+            path="/admin/pending-registrations"
+            element={
+            <ProtectedRoute allowedRoles={["admin"]}>
+              <AdminPendingRegistrations />
+            </ProtectedRoute>}
+          />
           {/* ---------- FALLBACK ---------- */}
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />

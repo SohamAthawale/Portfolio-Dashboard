@@ -35,6 +35,7 @@ export const Sidebar = () => {
   const adminNavItems = [
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/admin/service-requests', label: 'Service Requests', icon: ClipboardList },
+    { path: '/admin/pending-registrations', label: 'Pending Registrations', icon: ClipboardList },
   ];
 
   // 🔹 Choose which nav items to show based on user role

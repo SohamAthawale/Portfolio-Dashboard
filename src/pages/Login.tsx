@@ -36,7 +36,7 @@ export const Login = () => {
         const data = await response.json();
 
         if (response.ok) {
-          setMessage('✅ Registration successful! You can now sign in.');
+          setMessage('✅ Registration successful! You can now sign in after a admin approves you.');
           setIsRegister(false);
           setEmail('');
           setPhone('');

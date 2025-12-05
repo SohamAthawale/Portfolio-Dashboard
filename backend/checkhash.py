@@ -1,0 +1,5 @@
+from werkzeug.security import check_password_hash
+
+hash_value = "scrypt:32768:8:1$mGTE0fPZv6Yvx77g$fe9b7692df9772c1b2a1b0f902f02c8eaeffc91793856369ebcf7f72bb53641637b7a9899258cd23bee8867283aff7a621552cfef6cfca3d8120040033e6f5d3"
+
+print(check_password_hash(hash_value, "1111"))

@@ -44,10 +44,12 @@ Session(app)
 # -----------------------------------------------------
 # HELPERS
 # -----------------------------------------------------
+import psycopg2.extras
+
 def find_user(email):
     conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM users WHERE email=%s", (email,))
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM users WHERE email=%s LIMIT 1", (email,))
     user = cur.fetchone()
     cur.close()
     conn.close()
@@ -67,30 +69,14 @@ def create_user(email, phone, password):
     conn.close()
     return user
 
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if session.get("role") != "admin":
+            return jsonify({"error": "Admin access required"}), 403
+        return f(*args, **kwargs)
+    return decorated
 
-def assign_default_role(user_id):
-    """Assign the 'user' role to a new user automatically."""
-    conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT role_id FROM roles WHERE role_name = 'user'")
-    row = cur.fetchone()
-    if not row:
-        cur.close()
-        conn.close()
-        raise Exception("Default 'user' role not found in roles table")
-    role_id = row["role_id"] if isinstance(row, dict) else row[0]
-    cur.execute("""
-        INSERT INTO user_roles (user_id, role_id, scope)
-        VALUES (%s, %s, %s)
-    """, (user_id, role_id, 'default'))
-    conn.commit()
-    cur.close()
-    conn.close()
-
-
-# -----------------------------------------------------
-# SESSION AUTH HELPERS
-# -----------------------------------------------------
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -126,6 +112,31 @@ def get_current_user():
         "family_id": user["family_id"] if isinstance(user, dict) else user[3],
     }
 
+def fetch_user_family_id(cur, user_id: int) -> Optional[int]:
+    cur.execute("SELECT family_id FROM users WHERE user_id = %s", (user_id,))
+    r = cur.fetchone()
+    return r["family_id"] if r else None
+
+
+def resolve_per_family_member_to_canonical(cur, family_id: int, per_family_member_id: int) -> Optional[int]:
+    """
+    The client sends per-family member_id (1,2,3...). We map it to the canonical family_members.id
+    by searching family_members WHERE member_id = <per_family_member_id> AND family_id = <family_id>.
+    Returns canonical family_members.id or None if not found.
+    """
+    cur.execute(
+        "SELECT id FROM family_members WHERE member_id = %s AND family_id = %s",
+        (per_family_member_id, family_id),
+    )
+    r = cur.fetchone()
+    return r["id"] if r else None
+
+
+def get_service_request(cur, req_id: int) -> Optional[Dict[str, Any]]:
+    cur.execute("SELECT * FROM service_requests WHERE id = %s", (req_id,))
+    return cur.fetchone()
+
+
 
 # -----------------------------------------------------
 # ROUTES
@@ -136,6 +147,28 @@ def home():
 
 
 # ---------- Register ----------
+# ---------------------------------------------------------
+# ASSIGN DEFAULT ROLE (UPDATED)
+# ---------------------------------------------------------
+def assign_default_role(user_id, cur):
+    """Assign the 'user' role within the SAME transaction + cursor."""
+    cur.execute("SELECT role_id FROM roles WHERE role_name = 'user'")
+    row = cur.fetchone()
+
+    if not row:
+        raise Exception("Default 'user' role not found in roles table")
+
+    role_id = row["role_id"]
+
+    cur.execute("""
+        INSERT INTO user_roles (user_id, role_id, scope)
+        VALUES (%s, %s, %s)
+    """, (user_id, role_id, "default"))
+            
+
+# ---------------------------------------------------------
+# USER REGISTRATION - PENDING APPROVAL
+# ---------------------------------------------------------
 @app.route("/register", methods=["POST"])
 def register():
     data = request.get_json() or {}
@@ -145,6 +178,7 @@ def register():
 
     if not email or not phone or not password:
         return jsonify({"error": "All fields are required"}), 400
+
     if not phone.isdigit() or len(phone) != 10:
         return jsonify({"error": "Invalid phone number format"}), 400
 
@@ -153,53 +187,228 @@ def register():
         return jsonify({"error": "Email already registered"}), 409
 
     conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM users WHERE phone=%s", (phone,))
-    existing_phone = cur.fetchone()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    cur.execute("SELECT id FROM pending_registrations WHERE email=%s OR phone=%s", (email, phone))
+    existing_pending = cur.fetchone()
+
+    if existing_pending:
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Registration already pending approval"}), 409
+
+    password_hash = generate_password_hash(password)
+
+    cur.execute("""
+        INSERT INTO pending_registrations (email, phone, password_hash)
+        VALUES (%s, %s, %s)
+        RETURNING id
+    """, (email, phone, password_hash))
+
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Something went wrong"}), 500
+
+    pending_id = row["id"]
+
+    conn.commit()
     cur.close()
     conn.close()
-    if existing_phone:
-        return jsonify({"error": "Phone number already registered"}), 409
+
+    return jsonify({
+        "message": "Registration submitted. Waiting for admin approval.",
+        "pending_id": pending_id
+    }), 201
+
+
+# ---------------------------------------------------------
+# GET PENDING REGISTRATIONS
+# ---------------------------------------------------------
+@app.route("/admin/pending-registrations", methods=["GET"])
+@admin_required
+@login_required
+def get_pending_registrations():
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
-        user = create_user(email, phone, password)
-        user_id = user["user_id"] if isinstance(user, dict) else user[0]
-        assign_default_role(user_id)
-        return jsonify({
-            "message": "Registered successfully",
-            "user": {
-                "user_id": user_id,
-                "email": email,
-                "phone": phone,
-                "role": "user"
-            }
-        }), 201
+        cur.execute("""
+            SELECT id, email, phone, created_at
+            FROM pending_registrations
+            ORDER BY created_at ASC
+        """)
+        rows = cur.fetchall()
+
     except Exception as e:
-        print("❌ Registration error:", e)
-        return jsonify({"error": "Error creating user"}), 500
+        return jsonify({"error": "Failed to fetch pending registrations", "detail": str(e)}), 500
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify(rows), 200
 
 
-# ---------- Login ----------
+# ---------------------------------------------------------
+# APPROVE REGISTRATION
+# ---------------------------------------------------------
+@app.route("/admin/approve-registration/<int:pending_id>", methods=["POST"])
+@admin_required
+def approve_registration(pending_id):
+
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    try:
+        # 1️⃣ Fetch pending registration
+        cur.execute("SELECT * FROM pending_registrations WHERE id=%s", (pending_id,))
+        pending = cur.fetchone()
+
+        if not pending:
+            return jsonify({"error": "Pending registration not found"}), 404
+
+        # 2️⃣ Create family with auto-name
+        family_name = f"{pending['email']}'s Family"
+        cur.execute("""
+            INSERT INTO families (family_name)
+            VALUES (%s)
+            RETURNING family_id
+        """, (family_name,))
+        family_id = cur.fetchone()["family_id"]
+
+        # 3️⃣ Create user
+        cur.execute("""
+            INSERT INTO users (email, phone, password_hash, family_id)
+            VALUES (%s, %s, %s, %s)
+            RETURNING user_id
+        """, (pending["email"], pending["phone"], pending["password_hash"], family_id))
+
+        new_user = cur.fetchone()
+        if not new_user:
+            conn.rollback()
+            return jsonify({"error": "User insert returned no data"}), 500
+
+        user_id = new_user["user_id"]
+
+        # 4️⃣ Assign role inside SAME transaction
+        assign_default_role(user_id, cur)
+
+        # 5️⃣ Delete pending request
+        cur.execute("DELETE FROM pending_registrations WHERE id=%s", (pending_id,))
+
+        conn.commit()
+
+        return jsonify({
+            "message": "User approved successfully",
+            "user_id": user_id,
+            "family_id": family_id
+        }), 201
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": "Approval failed", "detail": str(e)}), 500
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+# ---------------------------------------------------------
+# REJECT REGISTRATION
+# ---------------------------------------------------------
+@app.route("/admin/reject-registration/<int:pending_id>", methods=["DELETE"])
+@admin_required
+def reject_registration(pending_id):
+
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute("DELETE FROM pending_registrations WHERE id=%s RETURNING id", (pending_id,))
+    deleted = cur.fetchone()
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    if not deleted:
+        return jsonify({"error": "Pending registration not found"}), 404
+
+    return jsonify({"message": "Registration rejected"}), 200
+
+
+# ---------------------------------------------------------
+# APPROVED USERS LIST
+# ---------------------------------------------------------
+@app.route("/admin/approved-accounts", methods=["GET"])
+@admin_required
+@login_required
+def approved_accounts():
+
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT user_id, email, phone, created_at
+            FROM users
+            ORDER BY created_at DESC
+        """)
+        rows = cur.fetchall()
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify(rows), 200
+
+
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json() or {}
     email = (data.get("email") or "").strip().lower()
     password = data.get("password", "")
 
+    print("\n===== LOGIN DEBUG =====")
+    print("Incoming email:", email)
+    print("Incoming password:", password)
+
     if not email or not password:
+        print("ERROR: Missing email or password")
         return jsonify({"error": "Email and password are required"}), 400
 
     user = find_user(email)
+    print("User from DB:", user)
+
     if not user:
+        print("ERROR: No account found")
         return jsonify({"error": "No account found for this email"}), 404
 
-    if not check_password_hash(user["password_hash"], password):
+    # Extract hash safely
+    stored_hash = user.get("password_hash") if isinstance(user, dict) else user[4]
+    print("Stored hash:", stored_hash)
+
+    try:
+        check_result = check_password_hash(stored_hash, password)
+        print("Password match result:", check_result)
+    except Exception as e:
+        print("ERROR during password check:", str(e))
+        return jsonify({"error": "Internal password check error"}), 500
+
+    if not check_result:
+        print("ERROR: Incorrect password")
         return jsonify({"error": "Incorrect password"}), 401
 
-    user_id = user["user_id"]
+    print("Password OK!")
+
+    user_id = user["user_id"] if isinstance(user, dict) else user[0]
 
     conn = get_db_conn()
-    cur = conn.cursor()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
         SELECT r.role_name
         FROM user_roles ur
@@ -210,13 +419,17 @@ def login():
     role_row = cur.fetchone()
     cur.close()
     conn.close()
-    role = role_row["role_name"] if isinstance(role_row, dict) else (role_row[0] if role_row else "user")
+
+    role = role_row["role_name"] if role_row else "user"
+    print("User role:", role)
 
     session["user_id"] = user_id
     session["user_email"] = user["email"]
     session["role"] = role
 
-    print(f"✅ Logged in {email} as {role}")
+    print("LOGIN SUCCESS:", email, "as", role)
+    print("=========================\n")
+
     return jsonify({
         "message": "Login successful",
         "user": {
@@ -226,6 +439,7 @@ def login():
             "role": role
         }
     }), 200
+
 
 
 # ---------- Logout ----------
@@ -1310,11 +1524,19 @@ def get_family_members():
 # ---------- Session Routes ----------
 @app.route("/check-session")
 def check_session():
+    logged_in = session.get("user_id") is not None
+
+    if not logged_in:
+        return jsonify({"logged_in": False}), 200
+
     return jsonify({
-        "logged_in": "user_id" in session,
+        "logged_in": True,
         "user_id": session.get("user_id"),
-        "email": session.get("user_email")
+        "email": session.get("user_email"),
+        "role": session.get("role"),  # ✅ SEND ROLE TO FRONTEND
+        "phone": session.get("phone")
     }), 200
+
 
 
 @app.route("/session-user", methods=["GET"])
@@ -1367,45 +1589,6 @@ ALLOWED_PORTFOLIO_COLUMNS = {
     "category",
     "sub_category",
 }
-
-
-# -------------------------
-# Helpers
-# -------------------------
-
-def admin_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if session.get("role") != "admin":
-            return jsonify({"error": "Admin access required"}), 403
-        return f(*args, **kwargs)
-    return decorated
-
-
-def fetch_user_family_id(cur, user_id: int) -> Optional[int]:
-    cur.execute("SELECT family_id FROM users WHERE user_id = %s", (user_id,))
-    r = cur.fetchone()
-    return r["family_id"] if r else None
-
-
-def resolve_per_family_member_to_canonical(cur, family_id: int, per_family_member_id: int) -> Optional[int]:
-    """
-    The client sends per-family member_id (1,2,3...). We map it to the canonical family_members.id
-    by searching family_members WHERE member_id = <per_family_member_id> AND family_id = <family_id>.
-    Returns canonical family_members.id or None if not found.
-    """
-    cur.execute(
-        "SELECT id FROM family_members WHERE member_id = %s AND family_id = %s",
-        (per_family_member_id, family_id),
-    )
-    r = cur.fetchone()
-    return r["id"] if r else None
-
-
-def get_service_request(cur, req_id: int) -> Optional[Dict[str, Any]]:
-    cur.execute("SELECT * FROM service_requests WHERE id = %s", (req_id,))
-    return cur.fetchone()
-
 
 # -------------------------
 # USER SIDE — SERVICE REQUESTS
