@@ -7,6 +7,7 @@ import psycopg2
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
+from otpverification import send_email_otp
 from ecasparser import process_ecas_file
 from db import get_db_conn
 from functools import wraps
@@ -49,11 +50,12 @@ import psycopg2.extras
 def find_user(email):
     conn = get_db_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("SELECT * FROM users WHERE email=%s LIMIT 1", (email,))
+    cur.execute("SELECT * FROM users WHERE email = %s LIMIT 1", (email,))
     user = cur.fetchone()
     cur.close()
     conn.close()
     return user
+
 
 
 def create_user(email, phone, password):
@@ -368,80 +370,234 @@ def approved_accounts():
 
 #-----------------login----------------------
 
+import random
+import datetime
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json() or {}
     email = (data.get("email") or "").strip().lower()
     password = data.get("password", "")
 
-    print("\n===== LOGIN DEBUG =====")
-    print("Incoming email:", email)
-    print("Incoming password:", password)
-
     if not email or not password:
-        print("ERROR: Missing email or password")
         return jsonify({"error": "Email and password are required"}), 400
 
+    # -----------------------------------------------
+    # 🔹 Find user
+    # -----------------------------------------------
     user = find_user(email)
-    print("User from DB:", user)
-
     if not user:
-        print("ERROR: No account found")
         return jsonify({"error": "No account found for this email"}), 404
 
-    # Extract hash safely
-    stored_hash = user.get("password_hash") if isinstance(user, dict) else user[4]
-    print("Stored hash:", stored_hash)
+    stored_hash = user.get("password_hash")
 
     try:
         check_result = check_password_hash(stored_hash, password)
-        print("Password match result:", check_result)
-    except Exception as e:
-        print("ERROR during password check:", str(e))
+    except:
         return jsonify({"error": "Internal password check error"}), 500
 
     if not check_result:
-        print("ERROR: Incorrect password")
         return jsonify({"error": "Incorrect password"}), 401
 
-    print("Password OK!")
-
-    user_id = user["user_id"] if isinstance(user, dict) else user[0]
-
+    # -----------------------------------------------
+    # 🔹 FETCH ROLE FROM user_roles TABLE
+    # -----------------------------------------------
     conn = get_db_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""
-        SELECT r.role_name
-        FROM user_roles ur
-        JOIN roles r ON ur.role_id = r.role_id
-        WHERE ur.user_id = %s
-        LIMIT 1
-    """, (user_id,))
+
+    cur.execute(
+        "SELECT role_id FROM user_roles WHERE user_id = %s LIMIT 1",
+        (user["user_id"],)
+    )
     role_row = cur.fetchone()
+
+    role_id = role_row["role_id"] if role_row else 2
+    role_name = "admin" if role_id == 1 else "user"
+
+    # -----------------------------------------------
+    # 🔹 GENERATE OTP
+    # -----------------------------------------------
+    otp = str(random.randint(100000, 999999))
+    expires = datetime.datetime.now() + datetime.timedelta(minutes=5)
+
+    # Delete old OTPs
+    cur.execute("DELETE FROM login_otps WHERE user_id = %s", (user["user_id"],))
+
+    # Insert new OTP record
+    cur.execute(
+        "INSERT INTO login_otps (user_id, otp_code, expires_at) VALUES (%s, %s, %s)",
+        (user["user_id"], otp, expires)
+    )
+
+    conn.commit()
     cur.close()
     conn.close()
 
-    role = role_row["role_name"] if role_row else "user"
-    print("User role:", role)
+    # -----------------------------------------------
+    # 🔹 SEND OTP EMAIL
+    # -----------------------------------------------
+    try:
+        send_email_otp(email, otp)
+    except Exception as e:
+        print("❌ Failed to send OTP email:", e)
+        return jsonify({"error": "Failed to send OTP email"}), 500
+    
+    # -----------------------------------------------
+    # RETURN OTP REQUIRED + USER ROLE
+    # -----------------------------------------------
+    return jsonify({
+        "otp_required": True,
+        "user_id": user["user_id"],
+        "role": role_name,
+        "email": user["email"]
+    }), 200
 
-    session["user_id"] = user_id
+
+@app.route("/verify-otp", methods=["POST"])
+def verify_otp():
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
+    otp_input = data.get("otp")
+
+    user = find_user(email)
+    if not user:
+        return jsonify({"error": "Invalid email"}), 400
+
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Fetch OTP entry
+    cur.execute(
+        "SELECT * FROM login_otps WHERE user_id = %s ORDER BY id DESC LIMIT 1",
+        (user["user_id"],)
+    )
+    row = cur.fetchone()
+
+    if not row:
+        return jsonify({"error": "OTP not found"}), 400
+
+    if row["otp_code"] != otp_input:
+        return jsonify({"error": "Incorrect OTP"}), 401
+
+    if datetime.datetime.now() > row["expires_at"]:
+        return jsonify({"error": "OTP expired"}), 400
+
+    # Delete OTP after success
+    cur.execute("DELETE FROM login_otps WHERE user_id = %s", (user["user_id"],))
+
+    # ---------------------------
+    # ✅ GET REAL ROLE FROM DB
+    # ---------------------------
+    cur.execute(
+        "SELECT role_id FROM user_roles WHERE user_id = %s LIMIT 1",
+        (user["user_id"],)
+    )
+    role_row = cur.fetchone()
+    role_id = role_row["role_id"] if role_row else 2   # default user
+
+    role_name = "admin" if role_id == 1 else "user"
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    # ---------------------------
+    # 🎉 OTP CORRECT → SAVE SESSION
+    # ---------------------------
+    session["user_id"] = user["user_id"]
     session["user_email"] = user["email"]
-    session["role"] = role
-
-    print("LOGIN SUCCESS:", email, "as", role)
-    print("=========================\n")
+    session["phone"] = user.get("phone")
+    session["role_id"] = role_id
+    session["role"] = role_name   # ⭐ FIXED — correct role now
 
     return jsonify({
         "message": "Login successful",
         "user": {
-            "user_id": user_id,
+            "user_id": user["user_id"],
             "email": user["email"],
             "phone": user.get("phone"),
-            "role": role
+            "role": role_name,      # ⭐ FIXED
+            "role_id": role_id      # optional
         }
     }), 200
 
+# ---------------------------------------------------------
+# LIVE CHECK - EMAIL
+# ---------------------------------------------------------
+@app.route("/check-email", methods=["POST"])
+def check_email():
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
 
+    if not email:
+        return jsonify({"error": "Email required"}), 400
+
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # 1️⃣ Check pending registrations FIRST
+    cur.execute(
+        "SELECT 1 FROM pending_registrations WHERE LOWER(email) = %s LIMIT 1",
+        (email,)
+    )
+    exists_pending = cur.fetchone()
+
+    if exists_pending:
+        cur.close()
+        conn.close()
+        return jsonify({
+            "exists": True,
+            "pending": True
+        }), 200
+
+    # 2️⃣ Check real users
+    cur.execute(
+        "SELECT 1 FROM users WHERE LOWER(email) = %s LIMIT 1",
+        (email,)
+    )
+    exists_user = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    if exists_user:
+        return jsonify({
+            "exists": True,
+            "pending": False
+        }), 200
+
+    # 3️⃣ Not found anywhere
+    return jsonify({
+        "exists": False
+    }), 200
+
+# ---------------------------------------------------------
+# LIVE CHECK - PHONE
+# ---------------------------------------------------------
+@app.route("/check-phone", methods=["POST"])
+def check_phone():
+    data = request.get_json() or {}
+    phone = (data.get("phone") or "").strip()
+
+    if not phone:
+        return jsonify({"error": "Phone required"}), 400
+
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Check users table
+    cur.execute("SELECT 1 FROM users WHERE phone = %s LIMIT 1", (phone,))
+    exists_user = cur.fetchone()
+
+    # Check pending registrations
+    cur.execute("SELECT 1 FROM pending_registrations WHERE phone = %s LIMIT 1", (phone,))
+    exists_pending = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    return jsonify({
+        "exists": bool(exists_user or exists_pending)
+    }), 200
 
 # ---------- Logout ----------
 @app.route("/logout", methods=["POST"])
@@ -1525,18 +1681,20 @@ def get_family_members():
 # ---------- Session Routes ----------
 @app.route("/check-session")
 def check_session():
-    logged_in = session.get("user_id") is not None
-
-    if not logged_in:
+    if not session.get("user_id"):
         return jsonify({"logged_in": False}), 200
+
+    role_id = session.get("role_id")
+    role_name = "admin" if role_id == 1 else "user"
 
     return jsonify({
         "logged_in": True,
-        "user_id": session.get("user_id"),
-        "email": session.get("user_email"),
-        "role": session.get("role"),  # ✅ SEND ROLE TO FRONTEND
-        "phone": session.get("phone")
+        "user_id": session["user_id"],
+        "email": session["user_email"],
+        "phone": session.get("phone"),
+        "role": role_name
     }), 200
+
 
 
 

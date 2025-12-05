@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 /* -----------------------------------------------
-   ✅ USER TYPE (includes role)
-   ----------------------------------------------- */
+   USER TYPE
+----------------------------------------------- */
 interface User {
   user_id: number;
   email: string;
@@ -11,31 +11,32 @@ interface User {
 }
 
 /* -----------------------------------------------
-   ✅ AUTH CONTEXT TYPE
-   ----------------------------------------------- */
+   CONTEXT TYPE
+----------------------------------------------- */
 interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
+  finishOtpLogin: (user: User) => void;   // ⭐ ADDED
   logout: () => Promise<void>;
   isLoading: boolean;
 }
 
 /* -----------------------------------------------
-   ✅ CONTEXT + API BASE URL
-   ----------------------------------------------- */
+   CREATE CONTEXT
+----------------------------------------------- */
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
 
 /* -----------------------------------------------
-   ✅ PROVIDER COMPONENT
-   ----------------------------------------------- */
+   PROVIDER
+----------------------------------------------- */
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  /* -------------------------------------------------
-     🔹 Restore user session on page load
-     ------------------------------------------------- */
+  /* -----------------------------------------------
+     RESTORE SESSION ON PAGE LOAD
+  ----------------------------------------------- */
   useEffect(() => {
     const fetchSession = async () => {
       try {
@@ -46,28 +47,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (response.ok) {
           const data = await response.json();
 
-          if (data.logged_in && data.user_id && data.email) {
-            // ✅ Optionally fetch role info if stored locally
-            const storedUser = localStorage.getItem('pms_user');
-            if (storedUser) {
-              const parsed = JSON.parse(storedUser);
-              setUser(parsed);
-            } else {
-              // fallback — no local cache
-              setUser({
-                user_id: data.user_id,
-                email: data.email,
-                role: 'user', // default — role will be set after next login
-              });
-            }
+          if (data.logged_in) {
+            // Backend session exists → restore user from backend or cache
+            const restoredUser: User = {
+              user_id: data.user_id,
+              email: data.email,
+              phone: data.phone,
+              role: data.role,
+            };
+
+            setUser(restoredUser);
+            localStorage.setItem('pms_user', JSON.stringify(restoredUser));
           } else {
-            // Session invalid or expired
             setUser(null);
             localStorage.removeItem('pms_user');
           }
-        } else {
-          setUser(null);
-          localStorage.removeItem('pms_user');
         }
       } catch (err) {
         console.error('⚠️ Error restoring session:', err);
@@ -80,44 +74,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fetchSession();
   }, []);
 
-  /* -------------------------------------------------
-     🔹 Login Function
-     ------------------------------------------------- */
+  /* -----------------------------------------------
+     NORMAL LOGIN (PASSWORD-ONLY)
+  ----------------------------------------------- */
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       const response = await fetch(`${API_BASE}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // ✅ allows Flask to set secure session cookie
+        credentials: 'include',
         body: JSON.stringify({ email, password }),
       });
 
-      if (response.ok) {
-        const data = await response.json();
+      if (!response.ok) return false;
 
-        const userData: User = {
-          user_id: data.user.user_id,
-          email: data.user.email,
-          phone: data.user.phone,
-          role: data.user.role, // ✅ role returned from backend
-        };
+      const data = await response.json();
 
+      if (data.otp_required) {
+        // OTP login path → AuthContext should NOT set user yet
+        return true;
+      }
+
+      // Only used for non-OTP login (rare)
+      if (data.user) {
+        const userData: User = data.user;
         setUser(userData);
         localStorage.setItem('pms_user', JSON.stringify(userData));
-        return true;
-      } else {
-        console.error('❌ Login failed with status', response.status);
-        return false;
       }
+
+      return true;
+
     } catch (err) {
-      console.error('⚠️ Network or server error during login:', err);
+      console.error('⚠️ Login error:', err);
       return false;
     }
   };
 
-  /* -------------------------------------------------
-     🔹 Logout Function
-     ------------------------------------------------- */
+  /* -----------------------------------------------
+     ⭐ FINISH OTP LOGIN (CALLED AFTER /verify-otp)
+  ----------------------------------------------- */
+  const finishOtpLogin = (userData: User) => {
+    setUser(userData);
+    localStorage.setItem('pms_user', JSON.stringify(userData));
+  };
+
+  /* -----------------------------------------------
+     LOGOUT
+  ----------------------------------------------- */
   const logout = async (): Promise<void> => {
     try {
       await fetch(`${API_BASE}/logout`, {
@@ -126,26 +129,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     } catch (err) {
       console.error('⚠️ Logout failed:', err);
-    } finally {
-      setUser(null);
-      localStorage.removeItem('pms_user');
     }
+
+    setUser(null);
+    localStorage.removeItem('pms_user');
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, login, finishOtpLogin, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
 /* -----------------------------------------------
-   ✅ Custom Hook
-   ----------------------------------------------- */
+   HOOK
+----------------------------------------------- */
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be inside AuthProvider');
+  return ctx;
 };
