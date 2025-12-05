@@ -3,6 +3,7 @@ import { Layout } from '../components/Layout';
 import { UploadForm } from '../components/UploadForm';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle } from 'lucide-react';
+import Logo from '../components/logo';
 
 export const Upload = () => {
   const [showSuccess, setShowSuccess] = useState(false);
@@ -14,6 +15,11 @@ export const Upload = () => {
 
   return (
     <Layout>
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-8">
+          <div>
+            <Logo className="w-40 mb-4 h-auto" />
+          </div>
+        </div>
       <AnimatePresence>
         {showSuccess && (
           <motion.div

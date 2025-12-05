@@ -1,23 +1,59 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Mail, Lock, Phone } from 'lucide-react';
+import { CheckCircle, XCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import Logo from "../components/logo";
 
-// ✅ Use centralized backend URL for consistency
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
+
+// SQL injection prevention regex
+const SQL_REGEX = /(\b(SELECT|INSERT|DELETE|UPDATE|DROP|UNION|ALTER|--|;|\/\*|\*\/)\b|['"])/i;
 
 export const Login = () => {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+
   const [isRegister, setIsRegister] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState('');
+
   const navigate = useNavigate();
   const { login } = useAuth();
 
+  // ---------------- VALIDATION STATES ----------------
+
+  const emailValid =
+    /^\S+@\S+\.\S+$/.test(email) && !SQL_REGEX.test(email);
+
+  const phoneValid =
+    isRegister &&
+    /^[0-9]{10}$/.test(phone) &&
+    !SQL_REGEX.test(phone);
+
+  const passwordRules = {
+    length: password.length >= 8,
+    upper: /[A-Z]/.test(password),
+    lower: /[a-z]/.test(password),
+    number: /[0-9]/.test(password),
+    special: /[!@#$%^&*(),.?":{}|<>]/.test(password),
+    noSQL: !SQL_REGEX.test(password),
+  };
+
+  const passwordValid =
+    passwordRules.length &&
+    passwordRules.upper &&
+    passwordRules.lower &&
+    passwordRules.number &&
+    passwordRules.special &&
+    passwordRules.noSQL;
+
+  const canSubmit = isRegister
+    ? emailValid && phoneValid && passwordValid
+    : emailValid && password.length > 0;
+
+  // ---------------- FORM SUBMIT ----------------
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage('');
@@ -25,41 +61,63 @@ export const Login = () => {
 
     try {
       if (isRegister) {
-        // --- Registration ---
-        const response = await fetch(`${API_BASE}/register`, {
+        const res = await fetch(`${API_BASE}/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, phone, password }),
-          credentials: 'include', // ✅ send cookies
+          credentials: 'include',
         });
 
-        const data = await response.json();
+        const data = await res.json();
 
-        if (response.ok) {
-          setMessage('✅ Registration successful! You can now sign in after a admin approves you.');
+        if (res.ok) {
+          setMessage("✅ Registration successful! Pending admin approval.");
           setIsRegister(false);
           setEmail('');
           setPhone('');
           setPassword('');
         } else {
-          setMessage(data.error || '❌ Registration failed.');
+          setMessage(`❌ ${data.error || "Unknown error"}`);
         }
-      } else {
-        // --- Login ---
-        const success = await login(email, password); // ✅ calls Flask + sets cookie
-        if (success) {
-          navigate('/upload');
-        } else {
-          setMessage('❌ Invalid credentials. Please try again.');
-        }
+
+        return;
       }
+
+      // ---------------- LOGIN ----------------
+      const res = await fetch(`${API_BASE}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        await login(email, password);
+        navigate('/upload');
+      } else {
+        setMessage(`❌ ${data.error || "Unknown error"}`);
+      }
+
     } catch (err) {
-      console.error('⚠️ Network error:', err);
-      setMessage('⚠️ Network error. Please check your connection.');
+      setMessage("⚠️ Network error. Please check your connection.");
     } finally {
       setIsLoading(false);
     }
   };
+
+  // ---------------- RULE COMPONENT ----------------
+  const Rule = ({ ok, text }: any) => (
+    <div className="flex items-center gap-2 text-sm">
+      {ok ? (
+        <CheckCircle className="text-green-600" size={16} />
+      ) : (
+        <XCircle className="text-red-500" size={16} />
+      )}
+      <span className={ok ? "text-green-600" : "text-red-600"}>{text}</span>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-gray-100 flex items-center justify-center p-4">
@@ -73,76 +131,87 @@ export const Login = () => {
           <div className="flex items-center justify-center mb-8">
             <Logo className="w-48 h-auto" />
           </div>
+
           <h1 className="text-3xl font-bold text-center text-gray-800 mb-2">
             {isRegister ? 'Create Account' : 'Welcome Back'}
           </h1>
-          <p className="text-center text-gray-600 mb-8">
-            {isRegister
-              ? 'Sign up to get started with your portfolio'
-              : 'Sign in to access your portfolio'}
-          </p>
 
           <form onSubmit={handleSubmit}>
-            {/* Email Field */}
+
+            {/* ---------------- EMAIL ---------------- */}
             <div className="mb-5">
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Email Address
               </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                <input
-                  type="email"
-                  id="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                  placeholder="you@example.com"
-                />
-              </div>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className={`w-full pl-3 pr-4 py-3 border rounded-lg transition-all 
+                  ${emailValid ? "border-green-500" : "border-red-400"}
+                `}
+                placeholder="you@example.com"
+              />
             </div>
 
-            {/* Phone Field (Register only) */}
+            {/* ---------------- PHONE ---------------- */}
             {isRegister && (
               <div className="mb-5">
-                <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Phone Number
                 </label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                  <input
-                    type="tel"
-                    id="phone"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    required={isRegister}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                    placeholder="9999999999"
-                  />
-                </div>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  required
+                  className={`w-full pl-3 pr-4 py-3 border rounded-lg transition-all
+                    ${phoneValid ? "border-green-500" : "border-red-400"}
+                  `}
+                  placeholder="9999999999"
+                />
               </div>
             )}
 
-            {/* Password Field */}
+            {/* ---------------- PASSWORD (Always visible) ---------------- */}
             <div className="mb-6">
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Password
               </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                <input
-                  type="password"
-                  id="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                  placeholder="••••••••"
-                />
-              </div>
+
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className={`w-full pl-3 pr-4 py-3 border rounded-lg transition-all
+                  ${
+                    isRegister
+                      ? passwordValid
+                        ? "border-green-500"
+                        : "border-red-400"
+                      : password.length > 0
+                      ? "border-green-500"
+                      : "border-gray-300"
+                  }
+                `}
+                placeholder="••••••••"
+              />
+
+              {/* Password checklist — ONLY during register */}
+              {isRegister && (
+                <div className="mt-3 space-y-1">
+                  <Rule ok={passwordRules.length} text="At least 8 characters" />
+                  <Rule ok={passwordRules.upper} text="1 uppercase letter" />
+                  <Rule ok={passwordRules.lower} text="1 lowercase letter" />
+                  <Rule ok={passwordRules.number} text="1 number" />
+                  <Rule ok={passwordRules.special} text="1 special character" />
+                </div>
+              )}
             </div>
 
-            {/* Message Display */}
+            {/* ---------------- MESSAGE ---------------- */}
             {message && (
               <div
                 className={`mb-4 p-3 rounded-lg text-sm ${
@@ -155,11 +224,15 @@ export const Login = () => {
               </div>
             )}
 
-            {/* Submit Button */}
+            {/* ---------------- SUBMIT BUTTON ---------------- */}
             <button
               type="submit"
-              disabled={isLoading}
-              className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!canSubmit || isLoading}
+              className={`w-full text-white py-3 rounded-lg font-medium transition-all
+                ${canSubmit
+                  ? "bg-blue-600 hover:bg-blue-700"
+                  : "bg-gray-400 cursor-not-allowed"}
+              `}
             >
               {isLoading
                 ? isRegister
@@ -171,7 +244,7 @@ export const Login = () => {
             </button>
           </form>
 
-          {/* Toggle Mode */}
+          {/* TOGGLE LOGIN/REGISTER */}
           <p
             className="text-center text-blue-600 text-sm mt-6 cursor-pointer hover:underline"
             onClick={() => {

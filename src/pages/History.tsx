@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Calendar, TrendingUp, Eye, Trash2, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { PortfolioSnapshot } from '../pages/PortfolioSnapshot';
+import Logo from '../components/logo';
 
 interface HistoryItem {
   portfolio_id: number;
@@ -111,6 +112,7 @@ export const History = () => {
         {/* Page Header */}
         <div className="flex items-center justify-between flex-wrap gap-3 mb-8">
           <div>
+            <Logo className="w-40 mb-4 h-auto" />
             <h1 className="text-3xl font-bold text-gray-800">Portfolio History</h1>
             <p className="text-sm text-gray-500 mt-1">
               View, analyze, or delete previous uploads
