@@ -1,3 +1,25 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* MOBILE DASHBOARD WIDTH FIX */
+@media (max-width: 640px) {
+  .dashboard-mobile-container {
+    max-width: 94%;    /* tighter width */
+    margin: 0 auto;    /* center it */
+  }
+
+  .dashboard-mobile-section {
+    width: 100%;
+    padding: 0.25rem 0.35rem; /* reduce inner padding */
+  }
+
+  .chart-mobile {
+    height: 260px !important; /* reduce height */
+  }
+
+  .pie-mobile {
+    width: 90% !important;
+    margin: 0 auto;
+  }
+}

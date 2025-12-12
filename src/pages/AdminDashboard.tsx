@@ -56,13 +56,9 @@ interface AdminStats {
   requests: RequestStats;
 }
 
-// ----------------------------
-// Helpers
-// ----------------------------
 const formatCurrency = (v: number) =>
   "₹" + Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
-// Recharts requires full margin object for correct typing
 const DEFAULT_MARGIN = { top: 20, right: 20, bottom: 20, left: 20 };
 
 // ----------------------------
@@ -75,26 +71,20 @@ export const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
+
     async function loadStats() {
       setLoading(true);
       setError(null);
 
       try {
-        const res = await fetch(`${API_BASE}/admin/stats`, { credentials: "include" });
-        if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          throw new Error(`Stats fetch failed (${res.status}): ${text || res.statusText}`);
-        }
+        const res = await fetch(`${API_BASE}/admin/stats`, {
+          credentials: "include",
+        });
+        if (!res.ok) throw new Error("Failed to fetch stats");
         const data = await res.json();
-        if (!cancelled) {
-          setStats(data as AdminStats);
-        }
+        if (!cancelled) setStats(data as AdminStats);
       } catch (err: any) {
-        console.error("Failed to load admin stats", err);
-        if (!cancelled) {
-          setError(err?.message || "Failed to load stats");
-          setStats(null);
-        }
+        if (!cancelled) setError(err.message);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -104,7 +94,7 @@ export const AdminDashboard: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, []); // run once on mount
+  }, []);
 
   if (loading)
     return (
@@ -124,22 +114,17 @@ export const AdminDashboard: React.FC = () => {
       </Layout>
     );
 
-  // Defensive fallbacks
   const users = stats?.users?.list ?? [];
   const totalUsers = stats?.users?.total ?? 0;
   const portfolioStats = stats?.portfolio_stats ?? ({} as PortfolioStats);
   const requests = stats?.requests ?? { total: 0, monthly: [], status: {} };
 
-  // Prepare data for charts
   const monthlyRequests = requests.monthly ?? [];
-  // Pie: status breakdown (service requests) as example
-  const statusPie = Object.entries(requests.status ?? {}).map(([name, value]) => ({
-    name,
-    value,
-  }));
 
-  // Top categories or other pie data: we don't have categories at admin/stats level.
-  // We'll show request status pie and a per-user portfolio counts bar (if available).
+  const statusPie = Object.entries(requests.status ?? {}).map(
+    ([name, value]) => ({ name, value })
+  );
+
   const perUserData =
     (portfolioStats.per_user ?? []).map((u: any) => ({
       user_id: u.user_id,
@@ -147,53 +132,65 @@ export const AdminDashboard: React.FC = () => {
       holdings: u.total_holdings ?? 0,
     })) ?? [];
 
-  // Limit perUserData length for performance (top 10 by portfolios)
   const perUserTop = [...perUserData]
     .sort((a, b) => (b.portfolios ?? 0) - (a.portfolios ?? 0))
     .slice(0, 10);
 
-  // Color palette
-  const COLORS = ["#4F46E5", "#10B981", "#F43F5E", "#F59E0B", "#3B82F6", "#7C3AED", "#06B6D4"];
+  const COLORS = [
+    "#4F46E5",
+    "#10B981",
+    "#F43F5E",
+    "#F59E0B",
+    "#3B82F6",
+    "#7C3AED",
+    "#06B6D4",
+  ];
 
   return (
     <Layout>
-      <motion.div className="p-8 space-y-8" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-       <div className="flex items-start justify-between">
+      <motion.div
+        className="p-4 sm:p-8 space-y-8"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+      >
+        {/* HEADER */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <Logo className="w-32 sm:w-44 h-auto" />
+            <h1 className="text-2xl sm:text-3xl font-bold">Admin Dashboard</h1>
+          </div>
 
-        {/* LEFT GROUP → Logo + Title together */}
-        <div className="flex items-center gap-4">
-          <Logo className="w-44 h-auto" />
-          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+          <div className="text-right">
+            <div className="text-xs sm:text-sm text-gray-600">Total users</div>
+            <div className="text-xl sm:text-2xl font-semibold">
+              {totalUsers}
+            </div>
+          </div>
         </div>
 
-        {/* RIGHT GROUP → Total Users */}
-        <div>
-          <div className="text-sm text-gray-600">Total users</div>
-          <div className="text-2xl font-semibold">{totalUsers}</div>
-        </div>
-
+        {/* STAT CARDS */}
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3 sm:gap-6">
+        <StatCard title="Users" value={totalUsers} />
+        <StatCard title="Families" value={stats?.families ?? 0} />
+        <StatCard title="Family Members" value={stats?.family_members ?? 0} />
+        <StatCard title="Total Portfolios" value={portfolioStats.total_portfolios ?? 0} />
       </div>
-        {/* Stat cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <StatCard title="Users" value={totalUsers} />
-          <StatCard title="Families" value={stats?.families ?? 0} />
-          <StatCard title="Family Members" value={stats?.family_members ?? 0} />
-          <StatCard title="Total Portfolios" value={portfolioStats.total_portfolios ?? 0} />
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <StatCard title="Total Holdings" value={portfolioStats.total_holdings ?? 0} />
-          <StatCard title="Total Invested" value={formatCurrency(portfolioStats.total_invested ?? 0)} />
-          <StatCard title="Total Valuation" value={formatCurrency(portfolioStats.total_valuation ?? 0)} />
-        </div>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3 sm:gap-6">
+        <StatCard title="Total Holdings" value={portfolioStats.total_holdings ?? 0} />
+        <StatCard title="Total Invested" value={formatCurrency(portfolioStats.total_invested ?? 0)} />
+        <StatCard title="Total Valuation" value={formatCurrency(portfolioStats.total_valuation ?? 0)} />
+      </div>
 
-        {/* Charts row */}
+        {/* CHARTS */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Monthly requests (bar) */}
-          <div className="bg-white p-6 rounded-2xl shadow h-[380px]">
-            <h2 className="text-xl font-semibold mb-4">Monthly Service Requests</h2>
+          {/* Monthly Requests */}
+          <div className="bg-white p-4 sm:p-6 rounded-2xl shadow h-[360px] sm:h-[380px]">
+            <h2 className="text-lg sm:text-xl font-semibold mb-4">
+              Monthly Service Requests
+            </h2>
             <ResponsiveContainer width="100%" height="85%">
-              <BarChart data={monthlyRequests ?? []} margin={DEFAULT_MARGIN}>
+              <BarChart data={monthlyRequests} margin={DEFAULT_MARGIN}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" angle={-20} textAnchor="end" interval={0} />
                 <YAxis allowDecimals={false} />
@@ -203,22 +200,26 @@ export const AdminDashboard: React.FC = () => {
             </ResponsiveContainer>
           </div>
 
-          {/* Request status pie */}
-          <div className="bg-white p-6 rounded-2xl shadow h-[380px]">
-            <h2 className="text-xl font-semibold mb-4">Service Request Status</h2>
+          {/* Request Status */}
+          <div className="bg-white p-4 sm:p-6 rounded-2xl shadow h-[360px] sm:h-[380px]">
+            <h2 className="text-lg sm:text-xl font-semibold mb-4">
+              Service Request Status
+            </h2>
             <ResponsiveContainer width="100%" height="85%">
-              <PieChart margin={DEFAULT_MARGIN}>
+              <PieChart>
                 <Pie
                   data={statusPie.length ? statusPie : [{ name: "none", value: 1 }]}
                   dataKey="value"
                   nameKey="name"
-                  outerRadius={110}
+                  outerRadius={100}
                   innerRadius={40}
-                  label={(entry) => `${entry.name}: ${entry.value}`}
+                  label={({ name, value }) => `${name}: ${value}`}
                 >
-                  {(statusPie.length ? statusPie : [{ name: "none", value: 1 }]).map((_, idx) => (
-                    <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
-                  ))}
+                  {(statusPie.length ? statusPie : [{ name: "none", value: 1 }]).map(
+                    (_, idx) => (
+                      <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
+                    )
+                  )}
                 </Pie>
                 <Tooltip />
                 <Legend verticalAlign="bottom" height={36} />
@@ -226,9 +227,11 @@ export const AdminDashboard: React.FC = () => {
             </ResponsiveContainer>
           </div>
 
-          {/* Per-user top bar */}
-          <div className="bg-white p-6 rounded-2xl shadow h-[380px]">
-            <h2 className="text-xl font-semibold mb-4">Top Users by Portfolios (top 10)</h2>
+          {/* Top Users */}
+          <div className="bg-white p-4 sm:p-6 rounded-2xl shadow h-[360px] sm:h-[380px]">
+            <h2 className="text-lg sm:text-xl font-semibold mb-4">
+              Top Users by Portfolios
+            </h2>
             <ResponsiveContainer width="100%" height="85%">
               <BarChart data={perUserTop} margin={{ top: 20, right: 20, bottom: 70, left: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -241,15 +244,15 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Users table */}
-        <div className="bg-white p-6 rounded-2xl shadow">
+        {/* USERS TABLE */}
+        <div className="bg-white p-4 sm:p-6 rounded-2xl shadow">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold">Users</h2>
-            <div className="text-sm text-gray-500">{users.length} rows</div>
+            <h2 className="text-lg sm:text-xl font-semibold">Users</h2>
+            <div className="text-xs sm:text-sm text-gray-500">{users.length} rows</div>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
+            <table className="min-w-full text-left text-xs sm:text-sm">
               <thead>
                 <tr className="text-gray-600 border-b">
                   <th className="py-2 px-3">User ID</th>
@@ -264,19 +267,22 @@ export const AdminDashboard: React.FC = () => {
                 {users.map((u) => (
                   <tr key={u.user_id} className="border-b hover:bg-gray-50">
                     <td className="py-2 px-3">{u.user_id}</td>
-                    <td className="py-2 px-3">{u.email}</td>
+                    <td className="py-2 px-3 break-all">{u.email}</td>
                     <td className="py-2 px-3">{u.phone ?? "—"}</td>
-                    <td className="py-2 px-3">{u.created_at ? new Date(u.created_at).toLocaleString() : "—"}</td>
+                    <td className="py-2 px-3">
+                      {u.created_at ? new Date(u.created_at).toLocaleString() : "—"}
+                    </td>
                     <td className="py-2 px-3">
                       <Link
                         to={`/admin/user/${u.user_id}`}
-                        className="text-indigo-600 hover:underline text-sm"
+                        className="text-indigo-600 hover:underline text-xs sm:text-sm"
                       >
                         View
                       </Link>
                     </td>
                   </tr>
                 ))}
+
                 {users.length === 0 && (
                   <tr>
                     <td colSpan={5} className="py-6 text-center text-gray-500">
@@ -294,13 +300,44 @@ export const AdminDashboard: React.FC = () => {
 };
 
 // ----------------------------
-// Small presentational helpers
+// Stat Card
 // ----------------------------
-const StatCard: React.FC<{ title: string; value: any }> = ({ title, value }) => (
-  <div className="bg-white p-5 rounded-2xl shadow min-h-[84px]">
-    <div className="text-sm text-gray-600">{title}</div>
-    <div className="text-2xl font-bold mt-2">{value}</div>
-  </div>
-);
+interface StatCardProps {
+  title: string;
+  value: string | number;
+}
+
+const StatCard: React.FC<StatCardProps> = ({ title, value }) => {
+  return (
+    <div
+      className="
+        p-4 sm:p-5 rounded-xl shadow-md bg-white 
+        flex flex-col justify-center 
+        min-w-[120px]   /* prevents shrinking too much */
+        max-w-full
+      "
+    >
+      {/* Title */}
+      <div
+        className="
+          text-xs sm:text-sm font-medium text-gray-600 
+          truncate whitespace-nowrap
+        "
+      >
+        {title}
+      </div>
+
+      {/* Value */}
+      <div
+        className="
+          text-lg sm:text-xl font-bold text-gray-900 
+          truncate
+        "
+      >
+        {value}
+      </div>
+    </div>
+  );
+};
 
 export default AdminDashboard;

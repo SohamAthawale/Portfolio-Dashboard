@@ -8,7 +8,11 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-export const Sidebar = () => {
+interface SidebarProps {
+  isMobile?: boolean;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
   const location = useLocation();
   const { user, logout } = useAuth();
 
@@ -41,6 +45,43 @@ export const Sidebar = () => {
   // 🔹 Choose which nav items to show based on user role
   const navItems = user?.role === 'admin' ? adminNavItems : userNavItems;
 
+  /* ---------------- MOBILE BOTTOM NAV ---------------- */
+  if (isMobile) {
+    return (
+      <div className="flex justify-around items-center py-2 bg-white border-t shadow-md">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isActive =
+            location.pathname === item.path ||
+            location.pathname.startsWith(item.path);
+
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={`flex flex-col items-center text-xs ${
+                isActive ? 'text-blue-600' : 'text-gray-600'
+              }`}
+            >
+              <Icon size={22} />
+              <span className="text-[10px]">{item.label}</span>
+            </Link>
+          );
+        })}
+
+        {/* Logout */}
+        <button
+          onClick={handleLogout}
+          className="flex flex-col items-center text-xs text-gray-600"
+        >
+          <LogOut size={22} />
+          <span className="text-[10px]">Logout</span>
+        </button>
+      </div>
+    );
+  }
+
+  /* ---------------- DESKTOP SIDEBAR ---------------- */
   return (
     <aside className="w-64 bg-white border-r border-gray-200 min-h-screen fixed left-0 top-0 z-10">
       {/* Header */}
@@ -78,7 +119,7 @@ export const Sidebar = () => {
         })}
       </nav>
 
-      {/* Logout Button */}
+      {/* Logout */}
       <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-gray-100">
         <button
           onClick={handleLogout}
