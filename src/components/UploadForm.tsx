@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, FileText, CheckCircle, Users } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Upload, FileText, Users } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 
 // ✅ Centralize backend URL
@@ -13,6 +13,10 @@ interface UploadFormProps {
 
 export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
   const [file, setFile] = useState<File | null>(null);
+
+  // ✅ NEW: statement type
+  const [fileType, setFileType] = useState('');
+
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState('');
@@ -39,7 +43,7 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
     fetchMembers();
   }, []);
 
-  // ✅ File selection
+  // ✅ File selection (UNCHANGED)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
@@ -56,8 +60,10 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
   // ✅ Submit upload
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || !user?.email) {
-      setError('No file selected or user not logged in.');
+
+    // ✅ UPDATED validation
+    if (!file || !user?.email || !fileType) {
+      setError('Please select a statement type and a file.');
       return;
     }
 
@@ -70,6 +76,9 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
     formData.append('file', file);
     formData.append('email', user.email);
     formData.append('password', password);
+
+    // ✅ NEW: send file_type
+    formData.append('file_type', fileType);
 
     // ✅ Add member_id if selected
     if (selectedMember) {
@@ -107,7 +116,6 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
         console.log('✅ Upload success:', data);
         setTimeout(() => {
           onSuccess();
-          // ✅ Redirect to unified dashboard
           navigate('/dashboard');
         }, 500);
       } else {
@@ -134,14 +142,38 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
         <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
           <Upload className="text-blue-600" size={32} />
         </div>
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">Upload ECAS Statement</h2>
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">
+          Upload ECAS Statement
+        </h2>
         <p className="text-gray-600">
           Upload your PDF statement for yourself or a family member
         </p>
       </div>
 
       <form onSubmit={handleSubmit}>
-        {/* ✅ Interactive Family Member Cards */}
+        {/* ===============================
+            NEW: Statement Type Dropdown
+           =============================== */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-800 mb-2">
+            Statement Type
+          </label>
+          <select
+            value={fileType}
+            onChange={(e) => setFileType(e.target.value)}
+            required
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Select statement type</option>
+            <option value="ecas_nsdl">ECAS-NSDL</option>
+            <option value="ecas_cdsl">ECAS-CDSL</option>
+            <option value="ecas_cams">ECAS-CAMS</option>
+          </select>
+        </div>
+
+        {/* ===============================
+            Family Member Cards (UNCHANGED)
+           =============================== */}
         {members.length > 0 && (
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-800 mb-3">
@@ -149,7 +181,6 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
             </label>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {/* Myself card */}
               <motion.button
                 type="button"
                 onClick={() => setSelectedMember('')}
@@ -164,7 +195,6 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
                 Myself
               </motion.button>
 
-              {/* Family Member cards */}
               {members.map((m) => (
                 <motion.button
                   key={m.member_id}
@@ -182,14 +212,12 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
                 </motion.button>
               ))}
             </div>
-
-            <p className="text-xs text-gray-500 mt-2">
-              Select whose portfolio statement you’re uploading.
-            </p>
           </div>
         )}
 
-        {/* File Upload */}
+        {/* ===============================
+            File Upload (UNCHANGED)
+           =============================== */}
         <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors">
           <input
             type="file"
@@ -207,34 +235,14 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
           </label>
         </div>
 
-        {/* File Selected */}
-        <AnimatePresence>
-          {file && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mt-4"
-            >
-              <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
-                <CheckCircle className="text-green-600" size={20} />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-green-800">{file.name}</p>
-                  <p className="text-xs text-green-600">
-                    {(file.size / 1024 / 1024).toFixed(2)} MB
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
         {/* Upload Progress */}
         {isUploading && (
           <div className="mt-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-gray-700">Uploading...</span>
-              <span className="text-sm font-medium text-blue-600">{uploadProgress}%</span>
+              <span className="text-sm font-medium text-blue-600">
+                {uploadProgress}%
+              </span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
               <motion.div
@@ -257,7 +265,7 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
         {/* Submit */}
         <button
           type="submit"
-          disabled={!file || isUploading}
+          disabled={!file || !fileType || isUploading}
           className="w-full mt-6 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isUploading ? 'Uploading...' : 'Upload Statement'}

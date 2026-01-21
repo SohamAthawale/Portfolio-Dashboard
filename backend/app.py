@@ -8,10 +8,11 @@ from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 from otpverification import send_email_otp
-from ecasparser import process_ecas_file
+from ecasparser import process_uploaded_file
+
 from db import get_db_conn
 from functools import wraps
-
+from redis import Redis
 
 # -----------------------------------------------------
 # CONFIG
@@ -29,17 +30,21 @@ CORS(
     origins=["http://localhost:5173", "http://127.0.0.1:5173"],
 )
 
-# ✅ Persistent Flask session configuration
+
+
 app.config.update(
-    SESSION_TYPE="filesystem",           # store session on disk
-    SESSION_PERMANENT=True,              # keep session active across restarts
-    SESSION_USE_SIGNER=True,             # adds extra security
-    SESSION_COOKIE_NAME="pms_session",   # custom cookie name
-    SESSION_COOKIE_SAMESITE="Lax",      # allow cross-origin (React <-> Flask)
-    SESSION_COOKIE_SECURE=False,         # only True if you serve via HTTPS
+    SESSION_TYPE="redis",
+    SESSION_REDIS=Redis(host="127.0.0.1", port=6379),
+    SESSION_PERMANENT=True,
+    SESSION_USE_SIGNER=True,
+    SESSION_KEY_PREFIX="pms:",
+    SESSION_COOKIE_NAME="pms_session",
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=False,  # TRUE only in prod HTTPS
 )
 
 Session(app)
+
 
 
 # -----------------------------------------------------
@@ -611,19 +616,31 @@ def logout():
 
 
 # ---------- Upload ECAS ----------
+# ---------- Upload ----------
 @app.route("/upload", methods=["POST"])
 def upload_ecas():
     try:
         file = request.files.get("file")
         email = request.form.get("email")
         pdf_password = request.form.get("password")
+        file_type = request.form.get("file_type")
 
-        if not file or not email:
-            return jsonify({"error": "File and email required"}), 400
+        if not file or not email or not file_type:
+            return jsonify({"error": "File, email, and file type are required"}), 400
+
+        if file_type not in {
+            "ecas_nsdl",
+            "ecas_cdsl",
+            "ecas_cams",
+            "bank_statement",
+            "mutual_fund_statement",
+        }:
+            return jsonify({"error": "Invalid file type"}), 400
 
         user = find_user(email)
         if not user:
             return jsonify({"error": "User not found"}), 404
+
         user_id = user["user_id"]
 
         conn = get_db_conn()
@@ -633,29 +650,45 @@ def upload_ecas():
             FROM portfolios
             WHERE user_id = %s
         """, (user_id,))
-        row = cur.fetchone()
-        next_portfolio_id = row["next_id"] if row else 1
+        next_portfolio_id = cur.fetchone()["next_id"]
         conn.close()
 
         user_folder = os.path.join(UPLOAD_FOLDER, f"user_{user_id}")
         os.makedirs(user_folder, exist_ok=True)
-        file_path = os.path.join(user_folder, f"portfolio_{next_portfolio_id}_{secure_filename(file.filename)}")
+
+        file_path = os.path.join(
+            user_folder,
+            f"portfolio_{next_portfolio_id}_{secure_filename(file.filename)}"
+        )
         file.save(file_path)
 
-        print(f"📄 Processing ECAS for user {user_id}, portfolio {next_portfolio_id}")
-        result = process_ecas_file(file_path, user_id, next_portfolio_id, pdf_password)
+        print(
+            f"📄 Processing upload: user={user_id}, "
+            f"portfolio={next_portfolio_id}, type={file_type}"
+        )
+
+        # ✅ SINGLE, CORRECT CALL
+        result = process_uploaded_file(
+            file_path=file_path,
+            user_id=user_id,
+            portfolio_id=next_portfolio_id,
+            file_type=file_type,
+            password=pdf_password,
+            clear_existing=False,
+        )
 
         return jsonify({
-            "message": "Portfolio uploaded successfully",
+            "message": "Upload successful",
             "user_id": user_id,
             "portfolio_id": next_portfolio_id,
-            "total_value": result["total_value"],
-            "holdings_count": len(result["holdings"]),
+            "file_type": file_type,
+            "total_value": result.get("total_value", 0),
+            "holdings_count": len(result.get("holdings", [])),
         }), 200
+
     except Exception as e:
         print("❌ Upload error:", e)
         return jsonify({"error": str(e)}), 500
-
 
 # ---------- Dashboard Data ----------
 from flask import jsonify, request, session
@@ -1397,20 +1430,22 @@ def delete_portfolio(portfolio_id):
 # -----------------------------------------------------
 # FAMILY ROUTES
 # -----------------------------------------------------
-
 @app.route("/upload-member", methods=["POST"])
 def upload_member_ecas():
-    """Upload ECAS PDF for a specific family member and store parsed holdings."""
     if "user_id" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
     user_id = session["user_id"]
-    per_family_member_id = request.form.get("member_id", type=int)  # frontend sends member_id (1,2,3...)
+    per_family_member_id = request.form.get("member_id", type=int)
     pdf_password = request.form.get("password")
     file = request.files.get("file")
+    file_type = request.form.get("file_type")  # ✅ from dropdown
 
-    if not file or per_family_member_id is None:
-        return jsonify({"error": "File and member ID are required"}), 400
+    if not file or not per_family_member_id or not file_type:
+        return jsonify({"error": "File, member ID, and file type are required"}), 400
+
+    if file_type not in {"ecas_nsdl", "ecas_cdsl","ecas_cams",}:
+        return jsonify({"error": "Only ECAS files allowed for member uploads"}), 400
 
     conn = None
     cur = None
@@ -1420,43 +1455,41 @@ def upload_member_ecas():
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
         # -------------------------------------------------------------
-        # 1️⃣ Convert per-family member_id --> global PK id
+        # 1️⃣ Resolve global member ID
         # -------------------------------------------------------------
         cur.execute("""
-            SELECT fm.id AS global_id, fm.family_id
+            SELECT fm.id AS global_id
             FROM family_members fm
             JOIN users u ON u.family_id = fm.family_id
-            WHERE fm.member_id = %s 
+            WHERE fm.member_id = %s
               AND u.user_id = %s
         """, (per_family_member_id, user_id))
 
         member_row = cur.fetchone()
-
         if not member_row:
-            return jsonify({"error": "Unauthorized: member not in your family"}), 403
+            return jsonify({"error": "Unauthorized member"}), 403
 
         global_member_id = member_row["global_id"]
-        family_id = member_row["family_id"]
 
         # -------------------------------------------------------------
-        # 2️⃣ Find latest portfolio for this user
+        # 2️⃣ Get latest portfolio for user
         # -------------------------------------------------------------
         cur.execute("""
-            SELECT MAX(portfolio_id) AS latest_portfolio
+            SELECT COALESCE(MAX(portfolio_id), 1) AS latest_portfolio
             FROM portfolios
             WHERE user_id = %s
         """, (user_id,))
-        result = cur.fetchone()
-        latest_portfolio_id = result["latest_portfolio"] if result and result["latest_portfolio"] else 1
+        latest_portfolio_id = cur.fetchone()["latest_portfolio"]
 
-        # Close DB before file operations
         cur.close()
         conn.close()
 
         # -------------------------------------------------------------
         # 3️⃣ Save uploaded file
         # -------------------------------------------------------------
-        member_folder = os.path.join(UPLOAD_FOLDER, f"member_{global_member_id}")
+        member_folder = os.path.join(
+            UPLOAD_FOLDER, f"member_{global_member_id}"
+        )
         os.makedirs(member_folder, exist_ok=True)
 
         file_path = os.path.join(
@@ -1465,24 +1498,44 @@ def upload_member_ecas():
         )
         file.save(file_path)
 
-        print(f"📄 Processing ECAS: user={user_id}, member_global_id={global_member_id}, portfolio={latest_portfolio_id}")
+        print(
+            f"📄 Processing member upload | "
+            f"user={user_id}, member={global_member_id}, "
+            f"portfolio={latest_portfolio_id}, type={file_type}"
+        )
 
         # -------------------------------------------------------------
-        # 4️⃣ Parse & Insert holdings
+        # 4️⃣ Route by file_type (EXPLICIT elif)
         # -------------------------------------------------------------
-        result = process_ecas_file(
-            file_path=file_path,
-            user_id=user_id,
-            portfolio_id=latest_portfolio_id,
-            password=pdf_password,
-            member_id=global_member_id   # IMPORTANT: pass global PK
-        )
+        if file_type == "ecas_nsdl":
+            result = process_uploaded_file(
+                file_path=file_path,
+                user_id=user_id,
+                portfolio_id=latest_portfolio_id,
+                password=pdf_password,
+                member_id=global_member_id,
+            )
+
+        elif file_type == "ecas_cdsl":
+            result = process_uploaded_file(
+                file_path=file_path,
+                user_id=user_id,
+                portfolio_id=latest_portfolio_id,
+                password=pdf_password,
+                member_id=global_member_id,
+                clear_existing=False,
+            )
+
+        else:
+            # Defensive guard (should never hit due to earlier validation)
+            return jsonify({"error": "Unsupported ECAS type"}), 400
 
         return jsonify({
             "message": "Member ECAS uploaded successfully",
             "member_id": per_family_member_id,
             "global_member_id": global_member_id,
             "portfolio_id": latest_portfolio_id,
+            "file_type": file_type,
             "total_value": result.get("total_value", 0),
             "holdings_count": len(result.get("holdings", [])),
         }), 200
@@ -1497,7 +1550,6 @@ def upload_member_ecas():
             cur.close()
         if conn:
             conn.close()
-
 
 #-------------------add-members-----------------------
 

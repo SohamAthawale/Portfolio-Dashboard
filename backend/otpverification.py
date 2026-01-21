@@ -2,7 +2,7 @@ import smtplib
 from email.mime.text import MIMEText
 
 SMTP_EMAIL = "asohamyt@gmail.com"
-SMTP_PASSWORD = "ygek sszm fzhg reww"  # generated from App Passwords
+SMTP_PASSWORD = "ygeksszmfzhgreww"  # generated from App Passwords
 
 def send_email_otp(to_email, otp):
     subject = "Your Login OTP"

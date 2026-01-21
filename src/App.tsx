@@ -97,7 +97,7 @@ function App() {
 
           {/* ---------- ✅ NEW PROFILE PAGE ---------- */}
           <Route
-            path="/profile"
+            path="/pmsreports/profile"
             element={
               <ProtectedRoute allowedRoles={['admin', 'user']}>
                 <ProfilePage />
