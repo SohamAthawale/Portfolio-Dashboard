@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 
 
-PDF_PATH = "/Users/sohamathawale/Desktop/CAS_23102025-21012026_CP202976779_21012026021415811.pdf"
+PDF_PATH = "/Users/sohamathawale/Desktop/APXXXXXX6R_23102025-21012026_CP202964029_21012026112806338 (1).pdf"
 
 
 def debug_cams_text_extraction(pdf_path: str):
