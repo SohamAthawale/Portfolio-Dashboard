@@ -21,7 +21,7 @@ interface MemberPortfolioData {
   holdings: { company: string; isin: string; value: number; category: string }[];
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
+const API_BASE = import.meta.env.VITE_API_URL || '/pmsreports';
 
 export const History = () => {
   const [history, setHistory] = useState<HistoryItem[]>([]);

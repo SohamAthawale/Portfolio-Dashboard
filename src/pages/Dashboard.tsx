@@ -34,7 +34,7 @@ import jsPDF from "jspdf";
 import { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent';
 import Logo from "../components/logo";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
+const API_BASE = import.meta.env.VITE_API_URL || '/pmsreports';
 
 /* ---------- TEMP CHART VALUES (you can tweak later) ---------- */
 const DEFAULT_CHART_LEFT_Y_WIDTH = 40;

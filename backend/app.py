@@ -148,7 +148,7 @@ def get_service_request(cur, req_id: int) -> Optional[Dict[str, Any]]:
 # -----------------------------------------------------
 # ROUTES
 # -----------------------------------------------------
-@app.route("/")
+@app.route("/pmsreports/")
 def home():
     return jsonify({"message": "Flask backend running ✅"})
 
@@ -176,7 +176,7 @@ def assign_default_role(user_id, cur):
 # ---------------------------------------------------------
 # USER REGISTRATION - PENDING APPROVAL
 # ---------------------------------------------------------
-@app.route("/register", methods=["POST"])
+@app.route("/pmsreports/register", methods=["POST"])
 def register():
     data = request.get_json() or {}
     email = (data.get("email") or "").strip().lower()
@@ -233,7 +233,7 @@ def register():
 # ---------------------------------------------------------
 # GET PENDING REGISTRATIONS
 # ---------------------------------------------------------
-@app.route("/admin/pending-registrations", methods=["GET"])
+@app.route("/pmsreports/admin/pending-registrations", methods=["GET"])
 @admin_required
 @login_required
 def get_pending_registrations():
@@ -261,7 +261,7 @@ def get_pending_registrations():
 # ---------------------------------------------------------
 # APPROVE REGISTRATION
 # ---------------------------------------------------------
-@app.route("/admin/approve-registration/<int:pending_id>", methods=["POST"])
+@app.route("/pmsreports/admin/approve-registration/<int:pending_id>", methods=["POST"])
 @admin_required
 def approve_registration(pending_id):
 
@@ -325,7 +325,7 @@ def approve_registration(pending_id):
 # ---------------------------------------------------------
 # REJECT REGISTRATION
 # ---------------------------------------------------------
-@app.route("/admin/reject-registration/<int:pending_id>", methods=["DELETE"])
+@app.route("/pmsreports/admin/reject-registration/<int:pending_id>", methods=["DELETE"])
 @admin_required
 def reject_registration(pending_id):
 
@@ -348,7 +348,7 @@ def reject_registration(pending_id):
 # ---------------------------------------------------------
 # APPROVED USERS LIST
 # ---------------------------------------------------------
-@app.route("/admin/approved-accounts", methods=["GET"])
+@app.route("/pmsreports/admin/approved-accounts", methods=["GET"])
 @admin_required
 @login_required
 def approved_accounts():
@@ -377,7 +377,7 @@ def approved_accounts():
 
 import random
 import datetime
-@app.route("/login", methods=["POST"])
+@app.route("/pmsreports/login", methods=["POST"])
 def login():
     data = request.get_json() or {}
     email = (data.get("email") or "").strip().lower()
@@ -457,7 +457,7 @@ def login():
     }), 200
 
 
-@app.route("/verify-otp", methods=["POST"])
+@app.route("/pmsreports/verify-otp", methods=["POST"])
 def verify_otp():
     data = request.get_json() or {}
     email = (data.get("email") or "").strip().lower()
@@ -528,7 +528,7 @@ def verify_otp():
 # ---------------------------------------------------------
 # LIVE CHECK - EMAIL
 # ---------------------------------------------------------
-@app.route("/check-email", methods=["POST"])
+@app.route("/pmsreports/check-email", methods=["POST"])
 def check_email():
     data = request.get_json() or {}
     email = (data.get("email") or "").strip().lower()
@@ -578,7 +578,7 @@ def check_email():
 # ---------------------------------------------------------
 # LIVE CHECK - PHONE
 # ---------------------------------------------------------
-@app.route("/check-phone", methods=["POST"])
+@app.route("/pmsreports/check-phone", methods=["POST"])
 def check_phone():
     data = request.get_json() or {}
     phone = (data.get("phone") or "").strip()
@@ -605,7 +605,7 @@ def check_phone():
     }), 200
 
 # ---------- Logout ----------
-@app.route("/logout", methods=["POST"])
+@app.route("/pmsreports/logout", methods=["POST"])
 def logout():
     if "user_id" not in session:
         return jsonify({"error": "No active session"}), 400
@@ -617,7 +617,7 @@ def logout():
 
 # ---------- Upload ECAS ----------
 # ---------- Upload ----------
-@app.route("/upload", methods=["POST"])
+@app.route("/pmsreports/upload", methods=["POST"])
 def upload_ecas():
     try:
         file = request.files.get("file")
@@ -694,7 +694,7 @@ def upload_ecas():
 from flask import jsonify, request, session
 from psycopg2.extras import RealDictCursor
 from db import get_db_conn
-@app.route("/dashboard-data")
+@app.route("/pmsreports/dashboard-data")
 def dashboard_data():
     """
     Returns enriched dashboard data for the user + selected members.
@@ -1040,7 +1040,7 @@ def dashboard_data():
     }), 200
 
 # ---------- History ----------
-@app.route("/history-data")
+@app.route("/pmsreports/history-data")
 def history_data():
     """Return summary of all uploaded portfolios (user + family members)."""
     user_id = session.get("user_id")
@@ -1113,7 +1113,7 @@ from flask import jsonify, session
 from psycopg2.extras import RealDictCursor
 from db import get_db_conn
 
-@app.route("/portfolio/<int:portfolio_id>/members", methods=["GET"])
+@app.route("/pmsreports/portfolio/<int:portfolio_id>/members", methods=["GET"])
 def portfolio_with_members(portfolio_id):
     """
     Historical portfolio breakdown:
@@ -1400,7 +1400,7 @@ def portfolio_with_members(portfolio_id):
 
 
 # ---------- Delete Portfolio ----------
-@app.route("/delete-portfolio/<int:portfolio_id>", methods=["DELETE"])
+@app.route("/pmsreports/delete-portfolio/<int:portfolio_id>", methods=["DELETE"])
 def delete_portfolio(portfolio_id):
     user_id = session.get("user_id")
     if not user_id:
@@ -1430,7 +1430,7 @@ def delete_portfolio(portfolio_id):
 # -----------------------------------------------------
 # FAMILY ROUTES
 # -----------------------------------------------------
-@app.route("/upload-member", methods=["POST"])
+@app.route("/pmsreports/upload-member", methods=["POST"])
 def upload_member_ecas():
     if "user_id" not in session:
         return jsonify({"error": "Unauthorized"}), 401
@@ -1553,7 +1553,7 @@ def upload_member_ecas():
 
 #-------------------add-members-----------------------
 
-@app.route("/family/add-member", methods=["POST"])
+@app.route("/pmsreports/family/add-member", methods=["POST"])
 def add_family_member():
     if "user_id" not in session:
         return jsonify({"error": "Unauthorized"}), 401
@@ -1633,7 +1633,7 @@ def add_family_member():
         return jsonify({"error": str(e)}), 500
 
 #--------------------delete-member----------------------
-@app.route("/family/delete-member/<int:member_id>", methods=["DELETE"])
+@app.route("/pmsreports/family/delete-member/<int:member_id>", methods=["DELETE"])
 def delete_family_member(member_id):
     if "user_id" not in session:
         return jsonify({"error": "Unauthorized"}), 401
@@ -1689,7 +1689,7 @@ def delete_family_member(member_id):
         return jsonify({"error": str(e)}), 500
 
 #--------------------get-members------------------------
-@app.route("/family/members", methods=["GET"])
+@app.route("/pmsreports/family/members", methods=["GET"])
 @login_required
 def get_family_members():
     user = get_current_user()
@@ -1731,7 +1731,7 @@ def get_family_members():
         return jsonify({"error": "Could not fetch family members"}), 500
 
 # ---------- Session Routes ----------
-@app.route("/check-session")
+@app.route("/pmsreports/check-session")
 def check_session():
     if not session.get("user_id"):
         return jsonify({"logged_in": False}), 200
@@ -1750,7 +1750,7 @@ def check_session():
 
 
 
-@app.route("/session-user", methods=["GET"])
+@app.route("/pmsreports/session-user", methods=["GET"])
 def session_user():
     user_id = session.get("user_id")
     if not user_id:
@@ -1806,7 +1806,7 @@ ALLOWED_PORTFOLIO_COLUMNS = {
 # -------------------------
 
 # Create a request
-@app.route("/service-requests", methods=["POST"])
+@app.route("/pmsreports/service-requests", methods=["POST"])
 @login_required
 def create_service_request():
     data = request.get_json() or {}
@@ -1860,7 +1860,7 @@ def create_service_request():
 
 
 # Get own requests
-@app.route("/service-requests", methods=["GET"])
+@app.route("/pmsreports/service-requests", methods=["GET"])
 @login_required
 def user_get_requests():
     user_id = session.get("user_id")
@@ -1902,7 +1902,7 @@ def user_get_requests():
 
 
 # Delete own request (only pending)
-@app.route("/service-requests/<int:req_id>", methods=["DELETE"])
+@app.route("/pmsreports/service-requests/<int:req_id>", methods=["DELETE"])
 @login_required
 def user_delete_request(req_id: int):
     user_id = session.get("user_id")
@@ -1941,7 +1941,7 @@ def user_delete_request(req_id: int):
 # -------------------------
 
 # Admin list requests
-@app.route("/admin/service-requests", methods=["GET"])
+@app.route("/pmsreports/admin/service-requests", methods=["GET"])
 @login_required
 @admin_required
 def admin_get_requests():
@@ -1979,7 +1979,7 @@ def admin_get_requests():
 
 
 # Admin update basic fields
-@app.route("/admin/service-requests/<int:req_id>", methods=["PUT"])
+@app.route("/pmsreports/admin/service-requests/<int:req_id>", methods=["PUT"])
 @login_required
 @admin_required
 def admin_update_request(req_id: int):
@@ -2030,7 +2030,7 @@ def admin_update_request(req_id: int):
 
 
 # Admin delete
-@app.route("/admin/service-requests/<int:req_id>", methods=["DELETE"])
+@app.route("/pmsreports/admin/service-requests/<int:req_id>", methods=["DELETE"])
 @login_required
 @admin_required
 def admin_delete_request(req_id: int):
@@ -2058,7 +2058,7 @@ def admin_delete_request(req_id: int):
 
 
 # Admin helper: get portfolio ids
-@app.route("/admin/user/<int:user_id>/portfolio-ids", methods=["GET"])
+@app.route("/pmsreports/admin/user/<int:user_id>/portfolio-ids", methods=["GET"])
 @login_required
 @admin_required
 def admin_get_user_portfolio_ids(user_id: int):
@@ -2088,7 +2088,7 @@ def admin_get_user_portfolio_ids(user_id: int):
 
 
 # Admin helper: get portfolios by portfolio_id
-@app.route("/admin/user/<int:user_id>/portfolios", methods=["GET"])
+@app.route("/pmsreports/admin/user/<int:user_id>/portfolios", methods=["GET"])
 @login_required
 @admin_required
 def admin_get_user_portfolios_by_portfolio_id(user_id: int):
@@ -2124,7 +2124,7 @@ def admin_get_user_portfolios_by_portfolio_id(user_id: int):
 # -------------------------
 # Admin perform endpoint (single unified)
 # -------------------------
-@app.route("/admin/service-requests/<int:req_id>/perform", methods=["POST"])
+@app.route("/pmsreports/admin/service-requests/<int:req_id>/perform", methods=["POST"])
 @login_required
 @admin_required
 def admin_perform_request_handler(req_id: int):
@@ -2248,7 +2248,7 @@ def admin_perform_request_handler(req_id: int):
 # -----------------------------------------------------
 # ADMIN: Add a note to a request (no status change)
 # -----------------------------------------------------
-@app.route("/admin/service-requests/<int:req_id>/add-note", methods=["PATCH"])
+@app.route("/pmsreports/admin/service-requests/<int:req_id>/add-note", methods=["PATCH"])
 @login_required
 @admin_required
 def admin_add_note(req_id):
@@ -2291,7 +2291,7 @@ def admin_add_note(req_id):
     return jsonify({"message": "Note added", "request": row}), 200
 from psycopg2.extras import RealDictCursor
 
-@app.route("/admin/stats")
+@app.route("/pmsreports/admin/stats")
 def admin_stats():
     try:
         conn = get_db_conn()
@@ -2463,7 +2463,7 @@ def admin_stats():
 # app.py (Flask) - replace the admin_user_detail function with this version
 from psycopg2.extras import RealDictCursor
 
-@app.route("/admin/user/<int:user_id>")
+@app.route("/pmsreports/admin/user/<int:user_id>")
 def admin_user_detail(user_id):
     try:
         conn = get_db_conn()
@@ -2613,4 +2613,4 @@ def not_found(e):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=8010)

@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { ClipboardList, CheckCircle, Clock, XCircle, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
+const API_BASE = import.meta.env.VITE_API_URL || '/pmsreports';
 
 interface ServiceRequest {
   id: number;

@@ -4,7 +4,8 @@ import { useAuth } from "../context/AuthContext";
 import { motion } from "framer-motion";
 import Logo from "../components/logo";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
+const API_BASE = import.meta.env.VITE_API_URL || '/pmsreports';
+
 
 /* -------------------------
    REGEX VALIDATION
