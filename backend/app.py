@@ -13,6 +13,7 @@ from ecasparser import process_uploaded_file
 from db import get_db_conn
 from functools import wraps
 from redis import Redis
+from morningstar import fetch_morningstar_returns, normalize_isin, upsert_morningstar_returns
 
 # -----------------------------------------------------
 # CONFIG
@@ -142,8 +143,6 @@ def resolve_per_family_member_to_canonical(cur, family_id: int, per_family_membe
 def get_service_request(cur, req_id: int) -> Optional[Dict[str, Any]]:
     cur.execute("SELECT * FROM service_requests WHERE id = %s", (req_id,))
     return cur.fetchone()
-
-
 
 # -----------------------------------------------------
 # ROUTES
@@ -782,7 +781,7 @@ def dashboard_data():
 
     cur.execute(query, (include_user, user_id, global_member_ids))
     holdings = cur.fetchall()
-
+    
     # ------------------------------------------------------------
     # If no holdings → return empty result
     # ------------------------------------------------------------
@@ -802,6 +801,70 @@ def dashboard_data():
             "holdings": [],
             "filters": {"user": include_user, "members": per_family_ids},
         }), 200
+    # ------------------------------------------------------------
+    # MORNINGSTAR RETURNS (DB-CACHED + SAFE)
+    # ------------------------------------------------------------
+
+    from datetime import datetime, timedelta
+
+    STALE_DAYS = 30
+    now = datetime.utcnow()
+
+    # 1️⃣ Collect MF ISINs only
+    mf_isins = {
+        normalize_isin(h["isin_no"])
+        for h in holdings
+        if h.get("isin_no")
+        and h.get("type", "").lower() in {
+            "mutual fund",
+            "mutual fund folio",
+            "mutual"
+        }
+    }
+
+    mf_isins = {i for i in mf_isins if i}
+
+    # 2️⃣ Load existing returns from DB
+    cur.execute("""
+        SELECT isin, updated_at
+        FROM historic_returns
+        WHERE isin = ANY(%s)
+    """, (list(mf_isins),))
+
+    existing = {
+        r["isin"]: r["updated_at"]
+        for r in cur.fetchall()
+    }
+
+    # 3️⃣ Fetch Morningstar ONLY if missing or stale
+    for isin in mf_isins:
+        updated_at = existing.get(isin)
+
+        if (
+            isin not in existing or
+            updated_at is None or
+            updated_at < now - timedelta(days=STALE_DAYS)
+        ):
+            data = fetch_morningstar_returns(isin)
+            if data:
+                upsert_morningstar_returns(data)
+
+    # 4️⃣ Final returns map for frontend
+    cur.execute("""
+        SELECT *
+        FROM historic_returns
+        WHERE isin = ANY(%s)
+    """, (list(mf_isins),))
+
+    returns_map = {
+        r["isin"]: {
+            "1y": float(r["return_1y"]) if r["return_1y"] is not None else None,
+            "3y": float(r["return_3y"]) if r["return_3y"] is not None else None,
+            "5y": float(r["return_5y"]) if r["return_5y"] is not None else None,
+            "10y": float(r["return_10y"]) if r["return_10y"] is not None else None,
+        }
+        for r in cur.fetchall()
+    }
 
     # -------------------------------------------------
     # CALCULATE TOTALS
@@ -1005,21 +1068,35 @@ def dashboard_data():
     # -------------------------------------------------
     # CLEAN HOLDINGS FOR FRONTEND
     # -------------------------------------------------
+    # ---------- BUILD RESPONSE ----------
     clean_holdings = []
+
     for h in holdings:
-        qty = float(h.get("units") or 0)
-        clean_holdings.append({
-            "company": h.get("fund_name") or "Unknown Fund",
-            "isin": h.get("isin_no") or "-",
-            "category": h.get("category") or "N/A",
-            "sub_category": h.get("sub_category") or "N/A",
-            "quantity": qty,  # Now always a float (even if 0)
+        isin = normalize_isin(h.get("isin_no"))
+
+        holding_item = {
+            "company": h.get("fund_name"),
+            "isin": isin,
+            "category": h.get("category"),
+            "sub_category": h.get("sub_category"),
+            "quantity": float(h.get("units") or 0),
             "nav": float(h.get("nav") or 0),
             "invested_amount": float(h.get("invested_amount") or 0),
             "value": float(h.get("valuation") or 0),
-            "type": h.get("type") or "N/A",
-            # We are not providing scheme_type and amc, so they will be undefined in React
-        })
+            "type": h.get("type"),
+        }
+
+        # ✅ Attach Morningstar returns ONLY if present
+        if isin and isin in returns_map:
+            holding_item["returns"] = returns_map[isin]
+
+        clean_holdings.append(holding_item)
+
+
+        cur.close()
+        conn.close()
+
+        
     # -------------------------------------------------
     # FINAL RESPONSE
     # -------------------------------------------------
@@ -1107,8 +1184,7 @@ def history_data():
     cur.close()
     conn.close()
     return jsonify(history), 200
-
-#----------------------Member Portfolios---------------------------------
+# ---------------------- Member Portfolios ---------------------------------
 from flask import jsonify, session
 from psycopg2.extras import RealDictCursor
 from db import get_db_conn
@@ -1120,6 +1196,7 @@ def portfolio_with_members(portfolio_id):
       - Member-wise holdings
       - Member-wise + All Members graph data (AMC, Category, Allocation)
       - NAV, units, invested, values, categories, subcategories
+      - MF-level Trailing CAGR returns
     """
 
     # -----------------------------
@@ -1145,7 +1222,7 @@ def portfolio_with_members(portfolio_id):
         return jsonify({"error": "Family not found"}), 404
 
     # -----------------------------
-    # 2️⃣ FETCH ALL HOLDINGS FOR THIS HISTORICAL PORTFOLIO
+    # 2️⃣ FETCH ALL HOLDINGS
     # -----------------------------
     cur.execute("""
         SELECT 
@@ -1175,7 +1252,55 @@ def portfolio_with_members(portfolio_id):
         return jsonify({"error": "No holdings found"}), 404
 
     # -----------------------------
-    # 3️⃣ GROUP HOLDINGS BY MEMBER
+    # HELPERS
+    # -----------------------------
+    def normalize_isin(isin):
+        return isin.split("_")[0].strip() if isin else None
+
+    MF_TYPES = {"mutual fund", "mutual fund folio", "mutual", "mf", "folio"}
+
+    SKIP_TYPES = {
+        "equity", "share", "shares", "stock", "stocks",
+        "govt security", "nps", "corporate bond"
+    }
+
+    # -----------------------------
+    # 3️⃣ LOAD TRAILING RETURNS (DB)
+    # -----------------------------
+    mf_isins = {
+        normalize_isin(r["isin_no"])
+        for r in rows
+        if r.get("isin_no")
+        and str(r.get("type", "")).lower() in MF_TYPES
+    }
+
+    mf_isins = {i for i in mf_isins if i}
+    returns_map = {}
+
+    if mf_isins:
+        cur.execute("""
+            SELECT
+                isin,
+                return_1y,
+                return_3y,
+                return_5y,
+                return_10y
+            FROM historic_returns
+            WHERE isin = ANY(%s)
+        """, (list(mf_isins),))
+
+        returns_map = {
+            r["isin"]: {
+                "1y": float(r["return_1y"]) if r["return_1y"] is not None else None,
+                "3y": float(r["return_3y"]) if r["return_3y"] is not None else None,
+                "5y": float(r["return_5y"]) if r["return_5y"] is not None else None,
+                "10y": float(r["return_10y"]) if r["return_10y"] is not None else None,
+            }
+            for r in cur.fetchall()
+        }
+
+    # -----------------------------
+    # 4️⃣ GROUP HOLDINGS BY MEMBER
     # -----------------------------
     members = {}
     all_holdings = []
@@ -1191,9 +1316,11 @@ def portfolio_with_members(portfolio_id):
                 "holdings": []
             }
 
+        isin = normalize_isin(r["isin_no"])
+
         holding = {
             "company": r["fund_name"],
-            "isin": r["isin_no"],
+            "isin": isin,
             "quantity": float(r["units"] or 0),
             "nav": float(r["nav"] or 0),
             "invested_amount": float(r["invested_amount"] or 0),
@@ -1203,11 +1330,19 @@ def portfolio_with_members(portfolio_id):
             "type": r["type"] or "N/A"
         }
 
+        # ✅ Attach Trailing CAGR (MF only)
+        if (
+            isin
+            and isin in returns_map
+            and str(r.get("type", "")).lower() in MF_TYPES
+        ):
+            holding["returns"] = returns_map[isin]
+
         members[mid]["holdings"].append(holding)
         all_holdings.append(holding)
 
     # -----------------------------
-    # AMC DETECTION UTIL LOGIC
+    # AMC DETECTION
     # -----------------------------
     junk_terms = [
         "DIRECT PLAN","DIRECT GROWTH","PLAN GROWTH","GROWTH PLAN","PLAN- GROWTH",
@@ -1254,41 +1389,37 @@ def portfolio_with_members(portfolio_id):
                 if p.startswith(amc) or f" {amc} " in f" {p} ":
                     return amc
 
-        words = t.split()
-        for w in words:
+        for w in t.split():
             if w not in stop_words and len(w) > 1:
                 return w
 
         return "OTHERS"
 
     # -----------------------------
-    # 4️⃣ PER-MEMBER COMPUTATION
+    # 5️⃣ PER-MEMBER COMPUTATION
     # -----------------------------
     member_results = []
-
-    SKIP_TYPES = {
-        "equity","share","shares","stock","stocks",
-        "govt security","nps","corporate bond"
-    }
 
     for mid, data in members.items():
         holdings = data["holdings"]
         total_value = sum(h["value"] for h in holdings)
 
-        # ---- Asset Allocation ----
+        # Asset Allocation
         alloc_map = {}
         for h in holdings:
-            cat = h["category"]
-            alloc_map[cat] = alloc_map.get(cat, 0) + h["value"]
+            alloc_map[h["category"]] = alloc_map.get(h["category"], 0) + h["value"]
 
-        asset_allocation = [{
-            "category": c,
-            "value": round(v, 2),
-            "percentage": round((v / total_value * 100), 2) if total_value else 0
-        } for c, v in alloc_map.items()]
+        asset_allocation = [
+            {
+                "category": c,
+                "value": round(v, 2),
+                "percentage": round((v / total_value * 100), 2) if total_value else 0
+            }
+            for c, v in alloc_map.items()
+        ]
         asset_allocation.sort(key=lambda x: x["value"], reverse=True)
 
-        # ---- AMC ----
+        # AMC
         amc_map = {}
         for h in holdings:
             if h["type"].lower() in SKIP_TYPES:
@@ -1302,13 +1433,12 @@ def portfolio_with_members(portfolio_id):
             reverse=True
         )[:10]
 
-        # ---- Category ----
+        # Category
         subcat_map = {}
         for h in holdings:
             if h["type"].lower() in SKIP_TYPES:
                 continue
-            sub = h["sub_category"]
-            subcat_map[sub] = subcat_map.get(sub, 0) + h["value"]
+            subcat_map[h["sub_category"]] = subcat_map.get(h["sub_category"], 0) + h["value"]
 
         top_category = sorted(
             [{"category": k, "value": round(v, 2)} for k, v in subcat_map.items()],
@@ -1316,7 +1446,6 @@ def portfolio_with_members(portfolio_id):
             reverse=True
         )[:10]
 
-        # ---- Final Member Entry ----
         member_results.append({
             "label": data["label"],
             "member_id": mid,
@@ -1328,24 +1457,24 @@ def portfolio_with_members(portfolio_id):
         })
 
     # -----------------------------
-    # 5️⃣ BUILD “ALL MEMBERS” ENTRY
+    # 6️⃣ ALL MEMBERS ENTRY
     # -----------------------------
     all_total_value = sum(h["value"] for h in all_holdings)
 
-    # Asset allocation
     alloc_map = {}
     for h in all_holdings:
-        cat = h["category"]
-        alloc_map[cat] = alloc_map.get(cat, 0) + h["value"]
+        alloc_map[h["category"]] = alloc_map.get(h["category"], 0) + h["value"]
 
-    all_asset_allocation = [{
-        "category": c,
-        "value": round(v, 2),
-        "percentage": round((v / all_total_value * 100), 2) if all_total_value else 0
-    } for c, v in alloc_map.items()]
+    all_asset_allocation = [
+        {
+            "category": c,
+            "value": round(v, 2),
+            "percentage": round((v / all_total_value * 100), 2) if all_total_value else 0
+        }
+        for c, v in alloc_map.items()
+    ]
     all_asset_allocation.sort(key=lambda x: x["value"], reverse=True)
 
-    # AMC
     amc_map = {}
     for h in all_holdings:
         if h["type"].lower() in SKIP_TYPES:
@@ -1359,13 +1488,11 @@ def portfolio_with_members(portfolio_id):
         reverse=True
     )[:10]
 
-    # Category
     subcat_map = {}
     for h in all_holdings:
         if h["type"].lower() in SKIP_TYPES:
             continue
-        sub = h["sub_category"]
-        subcat_map[sub] = subcat_map.get(sub, 0) + h["value"]
+        subcat_map[h["sub_category"]] = subcat_map.get(h["sub_category"], 0) + h["value"]
 
     all_top_category = sorted(
         [{"category": k, "value": round(v, 2)} for k, v in subcat_map.items()],
@@ -1373,8 +1500,7 @@ def portfolio_with_members(portfolio_id):
         reverse=True
     )[:10]
 
-    # ADD first entry
-    all_entry = {
+    member_results = [{
         "label": "All Members",
         "member_id": None,
         "summary": {"total": round(all_total_value, 2)},
@@ -1382,13 +1508,10 @@ def portfolio_with_members(portfolio_id):
         "asset_allocation": all_asset_allocation,
         "top_amc": all_top_amc,
         "top_category": all_top_category
-    }
-
-    # Prepend it
-    member_results = [all_entry] + member_results
+    }] + member_results
 
     # -----------------------------
-    # 6️⃣ RETURN COMPLETE RESPONSE
+    # 7️⃣ RESPONSE
     # -----------------------------
     cur.close()
     conn.close()

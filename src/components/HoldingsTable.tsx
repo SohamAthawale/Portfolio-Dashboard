@@ -1,6 +1,10 @@
 import { useState, useMemo } from "react";
 import { Search, ArrowUpDown } from "lucide-react";
 
+/* =======================
+   TYPES
+======================= */
+
 export interface Holding {
   company?: string;
   isin?: string;
@@ -11,8 +15,13 @@ export interface Holding {
   quantity?: number;
   nav?: number;
   value?: number;
+  returns?: {
+    "1y"?: number;
+    "3y"?: number;
+    "5y"?: number;
+    "10y"?:number;
+  };
   [key: string]: any;
-
 }
 
 interface HoldingsTableProps {
@@ -24,8 +33,17 @@ type SortField =
   | "value"
   | "category"
   | "nav"
-  | "invested_amount";
+  | "invested_amount"
+  | "return_1y"
+  | "return_3y"
+  | "return_5y"
+  | "return_10y";
+
 type SortDirection = "asc" | "desc";
+
+/* =======================
+   HELPERS
+======================= */
 
 const normalize = (str: any) =>
   str === null || str === undefined
@@ -36,6 +54,27 @@ const normalize = (str: any) =>
         .replace(/[\u0300-\u036f]/g, "")
         .replace(/\s+/g, "")
         .replace(/[^a-z0-9]/g, "");
+
+const fmt = (n?: number) =>
+  n !== undefined && !isNaN(n)
+    ? `₹${Number(n).toLocaleString("en-IN", {
+        maximumFractionDigits: 2,
+      })}`
+    : "-";
+
+const fmtPct = (v?: number) =>
+  typeof v === "number" ? `${v.toFixed(2)}%` : "—";
+
+const returnColor = (v?: number) => {
+  if (typeof v !== "number") return "text-gray-400";
+  if (v > 0) return "text-green-600";
+  if (v < 0) return "text-red-600";
+  return "text-gray-500";
+};
+
+/* =======================
+   COMPONENT
+======================= */
 
 export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -54,7 +93,6 @@ export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
   const filteredAndSortedHoldings = useMemo(() => {
     const term = normalize(searchTerm);
 
-    // Filter by relevant fields ONLY
     const filtered = holdings.filter((h) => {
       return (
         normalize(h.company).includes(term) ||
@@ -65,22 +103,24 @@ export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
       );
     });
 
-    // Sort
+    const getSortValue = (h: Holding) => {
+      if (sortField === "return_1y") return h.returns?.["1y"] ?? -Infinity;
+      if (sortField === "return_3y") return h.returns?.["3y"] ?? -Infinity;
+      if (sortField === "return_5y") return h.returns?.["5y"] ?? -Infinity;
+      if (sortField === "return_10y") return h.returns?.["10y"] ?? -Infinity;
+      return h[sortField];
+    };
+
     filtered.sort((a, b) => {
-      const aVal = a[sortField];
-      const bVal = b[sortField];
+      const aVal = getSortValue(a);
+      const bVal = getSortValue(b);
 
-      // String sorting
       if (typeof aVal === "string" || typeof bVal === "string") {
-        const aStr = String(aVal);
-        const bStr = String(bVal);
-
         return sortDirection === "asc"
-          ? aStr.localeCompare(bStr)
-          : bStr.localeCompare(aStr);
+          ? String(aVal).localeCompare(String(bVal))
+          : String(bVal).localeCompare(String(aVal));
       }
 
-      // Numeric sorting
       const aNum = Number(aVal) || 0;
       const bNum = Number(bVal) || 0;
 
@@ -89,11 +129,6 @@ export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
 
     return filtered;
   }, [holdings, searchTerm, sortField, sortDirection]);
-
-  const fmt = (n?: number) =>
-    n !== undefined && !isNaN(n)
-      ? `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`
-      : "-";
 
   return (
     <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100">
@@ -126,8 +161,7 @@ export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
                 className="text-left py-3 px-4 font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
               >
                 <div className="flex items-center gap-2">
-                  Company / Scheme
-                  <ArrowUpDown size={14} />
+                  Company / Scheme <ArrowUpDown size={14} />
                 </div>
               </th>
 
@@ -166,6 +200,32 @@ export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
                 </div>
               </th>
 
+              {/* RETURNS */}
+              <th
+                onClick={() => handleSort("return_1y")}
+                className="text-right py-3 px-4 font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
+              >
+                1Y %
+              </th>
+              <th
+                onClick={() => handleSort("return_3y")}
+                className="text-right py-3 px-4 font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
+              >
+                3Y %
+              </th>
+              <th
+                onClick={() => handleSort("return_5y")}
+                className="text-right py-3 px-4 font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
+              >
+                5Y %
+              </th>
+              <th
+                onClick={() => handleSort("return_10y")}
+                className="text-right py-3 px-4 font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
+              >
+                10Y %
+              </th>
+
               <th className="text-left py-3 px-4 font-medium text-gray-700">
                 Category
               </th>
@@ -175,7 +235,7 @@ export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
           <tbody>
             {filteredAndSortedHoldings.length === 0 ? (
               <tr>
-                <td colSpan={7} className="text-center py-8 text-gray-500">
+                <td colSpan={11} className="text-center py-8 text-gray-500">
                   No holdings found
                 </td>
               </tr>
@@ -205,6 +265,37 @@ export const HoldingsTable: React.FC<HoldingsTableProps> = ({ holdings }) => {
                   <td className="py-3 px-4 text-right font-semibold text-gray-800">
                     {fmt(h.value)}
                   </td>
+
+                  {/* RETURNS */}
+                  <td
+                    className={`py-3 px-4 text-right font-medium ${returnColor(
+                      h.returns?.["1y"]
+                    )}`}
+                  >
+                    {fmtPct(h.returns?.["1y"])}
+                  </td>
+                  <td
+                    className={`py-3 px-4 text-right font-medium ${returnColor(
+                      h.returns?.["3y"]
+                    )}`}
+                  >
+                    {fmtPct(h.returns?.["3y"])}
+                  </td>
+                  <td
+                    className={`py-3 px-4 text-right font-medium ${returnColor(
+                      h.returns?.["5y"]
+                    )}`}
+                  >
+                    {fmtPct(h.returns?.["5y"])}
+                  </td>
+                  <td
+                    className={`py-3 px-4 text-right font-medium ${returnColor(
+                      h.returns?.["10y"]
+                    )}`}
+                  >
+                    {fmtPct(h.returns?.["10y"])}
+                  </td>
+
                   <td className="py-3 px-4 text-gray-700">
                     {h.category}
                   </td>
