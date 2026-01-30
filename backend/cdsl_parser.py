@@ -1,9 +1,10 @@
+import os
 import re
 import unicodedata
 import fitz
 from typing import List, Dict, Tuple
 from db import get_db_conn
-
+from dedupe_context import is_duplicate, mark_seen
 
 # =====================================================
 # 1️⃣ PDF TEXT EXTRACTION
@@ -337,10 +338,13 @@ def process_cdsl_file(
     *,
     member_id: int | None = None,
     clear_existing: bool = False,
+    file_type: str
 ):
     print(f"📗 Processing CDSL eCAS for user {user_id}, portfolio {portfolio_id}")
     text = extract_blocks_text(file_path, password)
     holdings, total_value = parse_cdsl_ecas_text(text)
+
+    inserted = 0
 
     try:
         conn = get_db_conn()
@@ -357,9 +361,33 @@ def process_cdsl_file(
                     "DELETE FROM portfolios WHERE user_id=%s AND portfolio_id=%s AND member_id IS NULL",
                     (user_id, portfolio_id),
                 )
-            print(f"⚠️ Cleared existing rows for user {user_id}, portfolio {portfolio_id}")
 
         for h in holdings:
+            if is_duplicate(h):
+                cur.execute(
+            """
+            INSERT INTO portfolio_duplicates (
+                portfolio_id, user_id, member_id,
+                isin_no, fund_name, units, nav, valuation,
+                file_type, source_file
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """,
+            (
+                portfolio_id,
+                user_id,
+                member_id,
+                h.get("isin_no"),
+                h.get("fund_name"),
+                h.get("units"),
+                h.get("nav"),
+                h.get("valuation"),
+                file_type,           # pass this down
+                os.path.basename(file_path),
+            )
+        )        
+                continue
+
             cur.execute(
                 """
                 INSERT INTO portfolios (
@@ -385,18 +413,18 @@ def process_cdsl_file(
                 ),
             )
 
-        conn.commit()
-        cur.close()
-        conn.close()
-        print(f"💾 Inserted {len(holdings)} holdings into DB successfully")
+            mark_seen(h)
+            inserted += 1
 
-    except Exception as e:
-        try:
-            if conn:
-                conn.rollback()
-        except Exception:
-            pass
-        print(f"❌ DB insert failed: {e}")
+        conn.commit()
+        print(f"💾 Inserted {inserted} unique holdings into DB successfully")
+
+    except Exception:
+        if conn:
+            conn.rollback()
         raise
+    finally:
+        if conn:
+            conn.close()
 
     return {"holdings": holdings, "total_value": total_value}

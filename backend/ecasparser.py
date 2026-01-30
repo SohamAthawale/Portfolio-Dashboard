@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Optional, List
 
 import fitz  # PyMuPDF
 
@@ -38,7 +38,7 @@ def is_cdsl_ecas(text: str) -> bool:
     return (
         "Central Depository Services" in text
         or "CDSL Consolidated Account Statement" in text
-        or "CDSL"in text
+        or "CDSL" in text
     )
 
 
@@ -51,7 +51,7 @@ def is_cams_ecas(text: str) -> bool:
 
 
 # =====================================================
-# UNIVERSAL UPLOAD PROCESSOR (STRICT VALIDATION)
+# UNIVERSAL UPLOAD PROCESSOR (SINGLE FILE)
 # =====================================================
 def process_uploaded_file(
     *,
@@ -64,9 +64,8 @@ def process_uploaded_file(
     clear_existing: bool = False,
 ):
     """
-    Master entrypoint for uploaded files.
-    Routing is STRICTLY based on file_type from frontend dropdown.
-    File CONTENT is validated before parsing.
+    Processes ONE uploaded file.
+    Dedup is handled inside individual parsers via dedupe_context.
     """
 
     print("=" * 70)
@@ -78,23 +77,14 @@ def process_uploaded_file(
     print(f"🔐 password={'Yes' if password else 'No'}")
     print("=" * 70)
 
-    # -------------------------------------------------
-    # Basic file validation
-    # -------------------------------------------------
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"File not found: {file_path}")
 
     if not file_path.lower().endswith(".pdf"):
         raise ValueError("Only PDF files are supported")
 
-    # -------------------------------------------------
-    # Extract text for validation
-    # -------------------------------------------------
     text = extract_first_page_text(file_path, password=password)
 
-    # -------------------------------------------------
-    # STRICT FILE TYPE CHECK
-    # -------------------------------------------------
     if file_type == "ecas_nsdl" and not is_nsdl_ecas(text):
         raise ValueError("Selected NSDL eCAS but uploaded file is NOT an NSDL statement")
 
@@ -104,25 +94,20 @@ def process_uploaded_file(
     if file_type == "ecas_cams" and not is_cams_ecas(text):
         raise ValueError("Selected CAMS eCAS but uploaded file is NOT a CAMS statement")
 
-    # -------------------------------------------------
-    # ROUTING (NO AUTO-DETECTION)
-    # -------------------------------------------------
     if file_type == "ecas_nsdl":
-        print(f"📘 Routing to NSDL parser ({process_nsdl_file.__module__})")
-
         result = process_nsdl_file(
             file_path=file_path,
             user_id=user_id,
+            file_type=file_type,
             portfolio_id=portfolio_id,
             password=password,
             member_id=member_id,
         )
 
     elif file_type == "ecas_cdsl":
-        print(f"📗 Routing to CDSL parser ({process_cdsl_file.__module__})")
-
         result = process_cdsl_file(
             file_path=file_path,
+            file_type=file_type,
             user_id=user_id,
             portfolio_id=portfolio_id,
             password=password,
@@ -131,11 +116,10 @@ def process_uploaded_file(
         )
 
     elif file_type == "ecas_cams":
-        print(f"📙 Routing to CAMS parser ({process_cams_file.__module__})")
-
         result = process_cams_file(
             file_path=file_path,
             user_id=user_id,
+            file_type=file_type,
             portfolio_id=portfolio_id,
             password=password,
             member_id=member_id,
@@ -144,12 +128,50 @@ def process_uploaded_file(
     else:
         raise ValueError(f"Unsupported file_type: {file_type}")
 
-    # -------------------------------------------------
-    # Summary logs
-    # -------------------------------------------------
-    print(f"✅ Parsing completed successfully for user {user_id}")
-    print(f"💰 Total Portfolio Value: ₹{result.get('total_value', 0):,.2f}")
-    print(f"📊 Holdings Count: {len(result.get('holdings', []))}")
-    print("=" * 70)
-
+    print(f"✅ Completed: {file_type} | Holdings: {len(result.get('holdings', []))}")
     return result
+
+
+# =====================================================
+# ✅ NEW: MULTI-FILE PROCESSOR (DEDUP ACROSS FILES)
+# =====================================================
+def process_uploaded_files(
+    *,
+    file_paths: List[str],
+    file_types: List[str],
+    user_id: int,
+    portfolio_id: int,
+    password: Optional[str] = None,
+    member_id: Optional[int] = None,
+):
+    """
+    Processes MULTIPLE uploaded files in sequence.
+    Dedup applies ACROSS ALL files via dedupe_context.
+    """
+
+    if len(file_paths) != len(file_types):
+        raise ValueError("file_paths and file_types length mismatch")
+
+    all_holdings = []
+    total_value = 0.0
+
+    for idx, (path, ftype) in enumerate(zip(file_paths, file_types)):
+        print(f"\n🔁 Processing file {idx + 1}/{len(file_paths)} → {ftype}")
+
+        result = process_uploaded_file(
+            file_path=path,
+            file_type=ftype,
+            user_id=user_id,
+            portfolio_id=portfolio_id,
+            password=password,
+            member_id=member_id,
+            clear_existing=False,  # IMPORTANT: never clear between files
+        )
+
+        all_holdings.extend(result.get("holdings", []))
+        total_value += result.get("total_value", 0.0)
+
+    return {
+        "holdings": all_holdings,
+        "total_value": round(total_value, 2),
+    }

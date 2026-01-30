@@ -14,6 +14,7 @@ from db import get_db_conn
 from functools import wraps
 from redis import Redis
 from morningstar import fetch_morningstar_returns, normalize_isin, upsert_morningstar_returns
+from dedupe_context import reset_dedup_context
 
 # -----------------------------------------------------
 # CONFIG
@@ -615,74 +616,123 @@ def logout():
 
 
 # ---------- Upload ECAS ----------
-# ---------- Upload ----------
 @app.route("/pmsreports/upload", methods=["POST"])
 def upload_ecas():
+    # ✅ RESET DEDUP ONCE PER REQUEST
+    reset_dedup_context()
+
     try:
-        file = request.files.get("file")
+        files = request.files.getlist("files[]")
         email = request.form.get("email")
-        pdf_password = request.form.get("password")
-        file_type = request.form.get("file_type")
+        file_types = request.form.getlist("file_types[]")
+        passwords = request.form.getlist("passwords[]")  # ✅ PER FILE
 
-        if not file or not email or not file_type:
-            return jsonify({"error": "File, email, and file type are required"}), 400
+        if not files or not email or not file_types:
+            return jsonify({
+                "error": "files, email, and file_types are required"
+            }), 400
 
-        if file_type not in {
+        if len(file_types) != len(files):
+            return jsonify({
+                "error": "file_types count must match number of files"
+            }), 400
+
+        # Pad passwords if user left some blank
+        while len(passwords) < len(files):
+            passwords.append("")
+
+        allowed_types = {
             "ecas_nsdl",
             "ecas_cdsl",
             "ecas_cams",
             "bank_statement",
             "mutual_fund_statement",
-        }:
-            return jsonify({"error": "Invalid file type"}), 400
+        }
 
+        for ft in file_types:
+            if ft not in allowed_types:
+                return jsonify({"error": f"Invalid file type: {ft}"}), 400
+
+        # --------------------------------------------------
+        # Resolve user
+        # --------------------------------------------------
         user = find_user(email)
         if not user:
             return jsonify({"error": "User not found"}), 404
 
         user_id = user["user_id"]
 
+        # --------------------------------------------------
+        # Create ONE portfolio_id
+        # --------------------------------------------------
         conn = get_db_conn()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(
+            """
             SELECT COALESCE(MAX(portfolio_id), 0) + 1 AS next_id
             FROM portfolios
             WHERE user_id = %s
-        """, (user_id,))
-        next_portfolio_id = cur.fetchone()["next_id"]
+            """,
+            (user_id,),
+        )
+        portfolio_id = cur.fetchone()["next_id"]
         conn.close()
 
+        # --------------------------------------------------
+        # Save & process each file
+        # --------------------------------------------------
         user_folder = os.path.join(UPLOAD_FOLDER, f"user_{user_id}")
         os.makedirs(user_folder, exist_ok=True)
 
-        file_path = os.path.join(
-            user_folder,
-            f"portfolio_{next_portfolio_id}_{secure_filename(file.filename)}"
-        )
-        file.save(file_path)
+        results = []
+        total_value = 0.0
+        total_holdings = 0
 
-        print(
-            f"📄 Processing upload: user={user_id}, "
-            f"portfolio={next_portfolio_id}, type={file_type}"
-        )
+        for idx, (file, file_type, password) in enumerate(
+            zip(files, file_types, passwords), start=1
+        ):
+            if not file or not file.filename.lower().endswith(".pdf"):
+                continue
 
-        # ✅ SINGLE, CORRECT CALL
-        result = process_uploaded_file(
-            file_path=file_path,
-            user_id=user_id,
-            portfolio_id=next_portfolio_id,
-            file_type=file_type,
-            password=pdf_password,
-            clear_existing=False,
-        )
+            file_path = os.path.join(
+                user_folder,
+                f"portfolio_{portfolio_id}_{idx}_{secure_filename(file.filename)}"
+            )
+            file.save(file_path)
+
+            print(
+                f"📄 Processing file {idx}/{len(files)} | "
+                f"user={user_id}, portfolio={portfolio_id}, "
+                f"type={file_type}, password={'YES' if password else 'NO'}"
+            )
+
+            result = process_uploaded_file(
+                file_path=file_path,
+                user_id=user_id,
+                portfolio_id=portfolio_id,
+                file_type=file_type,
+                password=password or None,  # ✅ MATCHING PASSWORD
+                clear_existing=False,
+            )
+
+            results.append({
+                "file": file.filename,
+                "file_type": file_type,
+                "holdings": len(result.get("holdings", [])),
+                "total_value": result.get("total_value", 0),
+            })
+
+            total_value += result.get("total_value", 0)
+            total_holdings += len(result.get("holdings", []))
 
         return jsonify({
-            "message": "Upload successful",
+            "message": "Multi-file upload successful",
             "user_id": user_id,
-            "portfolio_id": next_portfolio_id,
-            "file_type": file_type,
-            "total_value": result.get("total_value", 0),
-            "holdings_count": len(result.get("holdings", [])),
+            "portfolio_id": portfolio_id,
+            "files_processed": len(results),
+            "summary": results,
+            "total_value": total_value,
+            "holdings_count": total_holdings,
         }), 200
 
     except Exception as e:
@@ -1555,30 +1605,38 @@ def delete_portfolio(portfolio_id):
 # -----------------------------------------------------
 @app.route("/pmsreports/upload-member", methods=["POST"])
 def upload_member_ecas():
+    reset_dedup_context()
+
     if "user_id" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
     user_id = session["user_id"]
     per_family_member_id = request.form.get("member_id", type=int)
-    pdf_password = request.form.get("password")
-    file = request.files.get("file")
-    file_type = request.form.get("file_type")  # ✅ from dropdown
 
-    if not file or not per_family_member_id or not file_type:
-        return jsonify({"error": "File, member ID, and file type are required"}), 400
+    files = request.files.getlist("files[]")
+    file_types = request.form.getlist("file_types[]")
+    passwords = request.form.getlist("passwords[]")  # ✅ PER FILE
 
-    if file_type not in {"ecas_nsdl", "ecas_cdsl","ecas_cams",}:
-        return jsonify({"error": "Only ECAS files allowed for member uploads"}), 400
+    if not files or not per_family_member_id or not file_types:
+        return jsonify({
+            "error": "files, member_id, and file_types are required"
+        }), 400
 
-    conn = None
-    cur = None
+    while len(passwords) < len(files):
+        passwords.append("")
+
+    allowed_types = {"ecas_nsdl", "ecas_cdsl", "ecas_cams"}
+
+    for ft in file_types:
+        if ft not in allowed_types:
+            return jsonify({"error": f"Invalid ECAS type: {ft}"}), 400
 
     try:
         conn = get_db_conn()
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
         # -------------------------------------------------------------
-        # 1️⃣ Resolve global member ID
+        # Resolve global member ID
         # -------------------------------------------------------------
         cur.execute("""
             SELECT fm.id AS global_id
@@ -1595,7 +1653,7 @@ def upload_member_ecas():
         global_member_id = member_row["global_id"]
 
         # -------------------------------------------------------------
-        # 2️⃣ Get latest portfolio for user
+        # Get latest portfolio
         # -------------------------------------------------------------
         cur.execute("""
             SELECT COALESCE(MAX(portfolio_id), 1) AS latest_portfolio
@@ -1607,72 +1665,57 @@ def upload_member_ecas():
         cur.close()
         conn.close()
 
-        # -------------------------------------------------------------
-        # 3️⃣ Save uploaded file
-        # -------------------------------------------------------------
         member_folder = os.path.join(
             UPLOAD_FOLDER, f"member_{global_member_id}"
         )
         os.makedirs(member_folder, exist_ok=True)
 
-        file_path = os.path.join(
-            member_folder,
-            f"portfolio_{latest_portfolio_id}_{secure_filename(file.filename)}"
-        )
-        file.save(file_path)
+        results = []
+        total_value = 0.0
+        total_holdings = 0
 
-        print(
-            f"📄 Processing member upload | "
-            f"user={user_id}, member={global_member_id}, "
-            f"portfolio={latest_portfolio_id}, type={file_type}"
-        )
-
-        # -------------------------------------------------------------
-        # 4️⃣ Route by file_type (EXPLICIT elif)
-        # -------------------------------------------------------------
-        if file_type == "ecas_nsdl":
-            result = process_uploaded_file(
-                file_path=file_path,
-                user_id=user_id,
-                portfolio_id=latest_portfolio_id,
-                password=pdf_password,
-                member_id=global_member_id,
+        for idx, (file, file_type, password) in enumerate(
+            zip(files, file_types, passwords), start=1
+        ):
+            file_path = os.path.join(
+                member_folder,
+                f"portfolio_{latest_portfolio_id}_{idx}_{secure_filename(file.filename)}"
             )
+            file.save(file_path)
 
-        elif file_type == "ecas_cdsl":
             result = process_uploaded_file(
                 file_path=file_path,
                 user_id=user_id,
                 portfolio_id=latest_portfolio_id,
-                password=pdf_password,
+                file_type=file_type,
+                password=password or None,
                 member_id=global_member_id,
                 clear_existing=False,
             )
 
-        else:
-            # Defensive guard (should never hit due to earlier validation)
-            return jsonify({"error": "Unsupported ECAS type"}), 400
+            results.append({
+                "file": file.filename,
+                "file_type": file_type,
+                "holdings": len(result.get("holdings", [])),
+                "total_value": result.get("total_value", 0),
+            })
+
+            total_value += result.get("total_value", 0)
+            total_holdings += len(result.get("holdings", []))
 
         return jsonify({
-            "message": "Member ECAS uploaded successfully",
-            "member_id": per_family_member_id,
-            "global_member_id": global_member_id,
+            "message": "Member ECAS multi-file upload successful",
             "portfolio_id": latest_portfolio_id,
-            "file_type": file_type,
-            "total_value": result.get("total_value", 0),
-            "holdings_count": len(result.get("holdings", [])),
+            "files_processed": len(results),
+            "summary": results,
+            "total_value": total_value,
+            "holdings_count": total_holdings,
         }), 200
 
     except Exception as e:
         print("❌ Error uploading member ECAS:", e)
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
 
 #-------------------add-members-----------------------
 
@@ -2726,6 +2769,92 @@ def admin_user_detail(user_id):
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route("/pmsreports/portfolio/<int:portfolio_id>/entries")
+def portfolio_entries(portfolio_id):
+    conn = get_db_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT *
+        FROM portfolios
+        WHERE portfolio_id = %s
+        ORDER BY fund_name
+    """, (portfolio_id,))
+
+    rows = cur.fetchall()
+    conn.close()
+    return jsonify(rows)
+@app.route("/pmsreports/portfolio/<int:portfolio_id>/duplicates/summary")
+def portfolio_duplicate_summary(portfolio_id):
+    conn = get_db_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            isin_no,
+            fund_name,
+            COUNT(*) AS occurrences,
+            ARRAY_AGG(DISTINCT file_type) AS sources
+        FROM portfolio_duplicates
+        WHERE portfolio_id = %s
+        GROUP BY isin_no, fund_name
+        ORDER BY occurrences DESC
+    """, (portfolio_id,))
+
+    rows = cur.fetchall()
+    conn.close()
+    return jsonify(rows)
+@app.route("/pmsreports/portfolio/<int:portfolio_id>/duplicates/detail")
+def portfolio_duplicate_detail(portfolio_id):
+    conn = get_db_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            isin_no,
+            fund_name,
+            valuation,
+            units,
+            nav,
+            file_type,
+            source_file,
+            created_at
+        FROM portfolio_duplicates
+        WHERE portfolio_id = %s
+        ORDER BY isin_no, created_at
+    """, (portfolio_id,))
+
+    rows = cur.fetchall()
+    conn.close()
+    return jsonify(rows)
+
+@app.route("/pmsreports/portfolio/latest")
+def get_latest_portfolio():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute("""
+        SELECT portfolio_id
+        FROM portfolios
+        WHERE user_id = %s
+        ORDER BY created_at DESC, portfolio_id DESC
+        LIMIT 1
+    """, (user_id,))
+
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not row:
+        return jsonify({"portfolio_id": None}), 200
+
+    return jsonify({
+        "portfolio_id": int(row["portfolio_id"])
+    }), 200
 
 # ---------- Serve React ----------
 @app.errorhandler(404)

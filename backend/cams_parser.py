@@ -1,8 +1,10 @@
+import os
 import re
 import fitz  # PyMuPDF
 from typing import List, Dict, Tuple, Optional
 from db import get_db_conn
 from cdsl_parser import classify_instrument
+from dedupe_context import is_duplicate, mark_seen
 
 
 # =====================================================
@@ -128,6 +130,7 @@ def parse_cams_two_column(blocks: List[Dict]) -> Tuple[List[Dict], float]:
 # =====================================================
 def process_cams_file(
     file_path: str,
+    file_type: str,
     user_id: int,
     portfolio_id: int,
     password: Optional[str] = None,
@@ -141,6 +144,8 @@ def process_cams_file(
     holdings, total_value = parse_cams_two_column(blocks)
 
     conn = None
+    inserted = 0   # ✅ ADDED (safe)
+
     try:
         conn = get_db_conn()
         cur = conn.cursor()
@@ -157,7 +162,31 @@ def process_cams_file(
                     (user_id, portfolio_id),
                 )
 
-        for h in holdings:
+        for h in holdings:     # ✅ ADDED
+            if is_duplicate(h):
+                cur.execute(
+            """
+            INSERT INTO portfolio_duplicates (
+                portfolio_id, user_id, member_id,
+                isin_no, fund_name, units, nav, valuation,
+                file_type, source_file
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """,
+            (
+                portfolio_id,
+                user_id,
+                member_id,
+                h.get("isin_no"),
+                h.get("fund_name"),
+                h.get("units"),
+                h.get("nav"),
+                h.get("valuation"),
+                file_type,           # pass this down
+                os.path.basename(file_path),
+            )
+        )        
+                continue
             cur.execute(
                 """
                 INSERT INTO portfolios (
@@ -184,9 +213,12 @@ def process_cams_file(
                 ),
             )
 
+            mark_seen(h)             # ✅ ADDED
+            inserted += 1            # ✅ ADDED
+
         conn.commit()
         cur.close()
-        print(f"💾 Inserted {len(holdings)} CAMS holdings into DB")
+        print(f"💾 Inserted {inserted} unique CAMS holdings into DB")
 
     except Exception as e:
         if conn:
