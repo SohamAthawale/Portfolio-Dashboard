@@ -437,30 +437,35 @@ def process_nsdl_file(
         inserted = 0
 
         for h in holdings:
+            # ONLY evaluate dedupe on FINAL accepted holdings
+            isin = (h.get("isin_no") or "").strip()
+
             if is_duplicate(h):
                 cur.execute(
-            """
-            INSERT INTO portfolio_duplicates (
-                portfolio_id, user_id, member_id,
-                isin_no, fund_name, units, nav, valuation,
-                file_type, source_file
-            )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            """,
-            (
-                portfolio_id,
-                user_id,
-                member_id,
-                h.get("isin_no"),
-                h.get("fund_name"),
-                h.get("units"),
-                h.get("nav"),
-                h.get("valuation"),
-                file_type,           # pass this down
-                os.path.basename(file_path),
-            )
-        )        
+                    """
+                    INSERT INTO portfolio_duplicates (
+                        portfolio_id, user_id, member_id,
+                        isin_no, fund_name, units, nav, valuation,
+                        file_type, source_file
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """,
+                    (
+                        portfolio_id,
+                        user_id,
+                        member_id,
+                        isin,
+                        h.get("fund_name"),
+                        h.get("units"),
+                        h.get("nav"),
+                        h.get("valuation"),
+                        file_type,
+                        os.path.basename(file_path),
+                    ),
+                )
                 continue
+
+
             isin = (h.get("isin_no") or "").strip()
             units = float(h.get("units") or 0.0)
             nav = float(h.get("nav") or 0.0)
