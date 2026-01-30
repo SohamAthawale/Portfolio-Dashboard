@@ -7,7 +7,7 @@ export const Navbar = () => {
   const navigate = useNavigate();
 
   const handleProfileClick = () => {
-    navigate('/profile');
+    navigate('/pmsreports/profile');
   };
 
   return (

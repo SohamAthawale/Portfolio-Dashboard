@@ -14,6 +14,7 @@ import { AdminProfilePage } from "./pages/AdminProfilePage";
 import { AdminPortfolioEditor } from "./pages/AdminPortfolioEditor";
 import { AdminUserDetail } from "./pages/AdminUserDetails";
 import AdminPendingRegistrations from "./pages/AdminPendingRegistrations";
+import PortfolioAudit from './pages/PortfolioAudit';
 
 /* -------------------------------------------------
    ✅ ROLE-BASED DASHBOARD WRAPPER
@@ -65,6 +66,15 @@ function App() {
               </ProtectedRoute>
             }
           />
+          {/* ✅ NEW: PORTFOLIO AUDIT */}
+          <Route
+            path="/portfolio-audit/:portfolio_id"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'user']}>
+                <PortfolioAudit />
+              </ProtectedRoute>
+            }
+          />
           {/* ---------- USER SERVICE REQUEST PAGE ---------- */}
           <Route
             path="/service-requests"
@@ -97,7 +107,7 @@ function App() {
 
           {/* ---------- ✅ NEW PROFILE PAGE ---------- */}
           <Route
-            path="/profile"
+            path="/pmsreports/profile"
             element={
               <ProtectedRoute allowedRoles={['admin', 'user']}>
                 <ProfilePage />
@@ -137,7 +147,7 @@ function App() {
           />
           {/* ---------- FALLBACK ---------- */}
           <Route path="/" element={<Navigate to="/login" replace />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Router>
     </AuthProvider>

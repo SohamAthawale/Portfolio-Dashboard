@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { ClipboardList, Trash2, Mail, User } from "lucide-react";
 import Logo from "../components/logo";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
+const API_BASE = import.meta.env.VITE_API_URL || '/pmsreports';
 
 type StatusType = "pending" | "processing" | "completed" | "rejected";
 

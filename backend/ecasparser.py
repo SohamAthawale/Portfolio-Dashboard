@@ -1,135 +1,113 @@
-import re
-import fitz
 import os
-from typing import Optional
-import nsdl_parser
-import cdsl_parser
+from typing import Optional, List
+
+import fitz  # PyMuPDF
+
+from cams_parser import process_cams_file
 from nsdl_parser import process_nsdl_file
 from cdsl_parser import process_cdsl_file
 
-# Log active parser location for clarity
-print("🧠 ACTIVE NSDL PARSER FILE:", nsdl_parser.__file__)
 
 # =====================================================
-# 1️⃣ PDF TEXT EXTRACTION (for detection only)
+# PDF TEXT EXTRACTION (FIRST PAGE ONLY)
 # =====================================================
-def extract_text_for_detection(file_path: str, password: Optional[str] = None) -> str:
-    """
-    Extract minimal text for detecting Depository type (CDSL/NSDL).
-    Does not perform layout parsing — only a lightweight text read.
-    """
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"File not found: {file_path}")
-
-    doc = fitz.open(file_path)
-    if doc.needs_pass:
-        if not password:
-            raise ValueError("PDF requires a password.")
-        if not doc.authenticate(password):
-            raise ValueError("Invalid PDF password.")
-
-    text = ""
-    for page in doc:
-        text += page.get_text("text") + "\n"
-    doc.close()
-
-    return text.lower().strip()
+def extract_first_page_text(file_path: str, password: Optional[str] = None) -> str:
+    try:
+        doc = fitz.open(file_path)
+        if doc.needs_pass:
+            if not password:
+                raise ValueError("PDF is password protected but no password was provided")
+            if not doc.authenticate(password):
+                raise ValueError("Incorrect PDF password")
+        return doc[0].get_text()
+    except Exception as e:
+        raise ValueError(f"Failed to read PDF: {e}")
 
 
 # =====================================================
-# 2️⃣ DEPOSITORY DETECTION LOGIC (Content-based, strict)
+# FILE TYPE VALIDATORS
 # =====================================================
-def detect_depository_type_from_text(text: str) -> str:
-    """
-    Detect whether the eCAS belongs to NSDL or CDSL
-    purely from PDF content (no reliance on filename).
-    Raises an error if no explicit classification can be made.
-    """
-    t = text.lower().replace("\n", " ")
-
-    # NSDL indicators
-    nsdl_markers = [
-        "national securities depository limited",
-        "about nsdl",
-        "we at nsdl",
-        "nsdl demat account",
-        "nsdl id",
-        "nsdl national insurance repository",
-    ]
-
-    # CDSL indicators
-    cdsl_markers = [
-        "central depository services",
-        "cdsl demat account",
-        "beneficiary id",
-        "cdsl easi",
-        "cdsl easiest",
-    ]
-
-    nsdl_score = sum(m in t for m in nsdl_markers)
-    cdsl_score = sum(m in t for m in cdsl_markers)
-
-    print(f"🔎 Detection scan: NSDL hits={nsdl_score}, CDSL hits={cdsl_score}")
-
-    
-    # --- Decide by dominance rather than exclusivity ---
-    if nsdl_score > cdsl_score:
-        print("📘 Detected Depository: NSDL (dominant markers)")
-        return "NSDL"
-    if cdsl_score > nsdl_score:
-        print("📗 Detected Depository: CDSL (dominant markers) ")
-        return "CDSL"
-    if cdsl_score == nsdl_score:
-        return "CDSL"
-    raise ValueError(
-        "⚠️ Unable to confidently detect Depository type "
-        f"(NSDL={nsdl_score}, CDSL={cdsl_score})"
+def is_nsdl_ecas(text: str) -> bool:
+    return (
+        "National Securities Depository Limited" in text
+        or "NSDL Consolidated Account Statement" in text
     )
+
+
+def is_cdsl_ecas(text: str) -> bool:
+    return (
+        "Central Depository Services" in text
+        or "CDSL Consolidated Account Statement" in text
+        or "CDSL" in text
+    )
+
+
+def is_cams_ecas(text: str) -> bool:
+    return (
+        "Computer Age Management Services" in text
+        or "CAMS Consolidated Statement" in text
+        or "CAMS" in text
+    )
+
+
 # =====================================================
-# 3️⃣ UNIVERSAL PROCESSOR
+# UNIVERSAL UPLOAD PROCESSOR (SINGLE FILE)
 # =====================================================
-def process_ecas_file(
+def process_uploaded_file(
+    *,
     file_path: str,
     user_id: int,
     portfolio_id: int,
+    file_type: str,
     password: Optional[str] = None,
-    *,
     member_id: Optional[int] = None,
     clear_existing: bool = False,
 ):
     """
-    Master entrypoint for any uploaded eCAS (CDSL or NSDL):
-    - Extracts PDF text
-    - Detects Depository type using internal content
-    - Routes to the correct parser
-    - Performs DB insertions
-    - Strict mode: raises error if detection uncertain
+    Processes ONE uploaded file.
+    Dedup is handled inside individual parsers via dedupe_context.
     """
+
     print("=" * 70)
-    print(f"📄 Processing uploaded eCAS for user_id={user_id}, portfolio_id={portfolio_id}")
-    print(f"📁 File: {file_path}")
-    print(f"🔐 Password provided: {'Yes' if password else 'No'}")
+    print("📄 Processing uploaded file")
+    print(f"👤 user_id={user_id}")
+    print(f"📁 portfolio_id={portfolio_id}")
+    print(f"📄 file={file_path}")
+    print(f"📌 file_type={file_type}")
+    print(f"🔐 password={'Yes' if password else 'No'}")
+    print("=" * 70)
 
-    # --- Step 1: Extract text and detect Depository type ---
-    text = extract_text_for_detection(file_path, password)
-    depository = detect_depository_type_from_text(text)
-    print(f"🏦 Detected Depository: {depository}")
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
 
-    # --- Step 2: Route to appropriate parser ---
-    if depository == "NSDL":
-        print(f"📘 Routing to NSDL parser ({process_nsdl_file.__module__})")
+    if not file_path.lower().endswith(".pdf"):
+        raise ValueError("Only PDF files are supported")
+
+    text = extract_first_page_text(file_path, password=password)
+
+    if file_type == "ecas_nsdl" and not is_nsdl_ecas(text):
+        raise ValueError("Selected NSDL eCAS but uploaded file is NOT an NSDL statement")
+
+    if file_type == "ecas_cdsl" and not is_cdsl_ecas(text):
+        raise ValueError("Selected CDSL eCAS but uploaded file is NOT a CDSL statement")
+
+    if file_type == "ecas_cams" and not is_cams_ecas(text):
+        raise ValueError("Selected CAMS eCAS but uploaded file is NOT a CAMS statement")
+
+    if file_type == "ecas_nsdl":
         result = process_nsdl_file(
             file_path=file_path,
             user_id=user_id,
+            file_type=file_type,
             portfolio_id=portfolio_id,
             password=password,
             member_id=member_id,
         )
 
-    else:  # CDSL
-        print(f"📗 Routing to CDSL parser ({process_cdsl_file.__module__})")
+    elif file_type == "ecas_cdsl":
         result = process_cdsl_file(
             file_path=file_path,
+            file_type=file_type,
             user_id=user_id,
             portfolio_id=portfolio_id,
             password=password,
@@ -137,10 +115,63 @@ def process_ecas_file(
             clear_existing=clear_existing,
         )
 
-    # --- Step 3: Log summary ---
-    print(f"✅ Parsing completed successfully for user {user_id}")
-    print(f"💰 Total Portfolio Value: ₹{result['total_value']:,.2f}")
-    print(f"📊 Holdings Count: {len(result['holdings'])}")
-    print("=" * 70)
+    elif file_type == "ecas_cams":
+        result = process_cams_file(
+            file_path=file_path,
+            user_id=user_id,
+            file_type=file_type,
+            portfolio_id=portfolio_id,
+            password=password,
+            member_id=member_id,
+            clear_existing=clear_existing,
+        )
+    else:
+        raise ValueError(f"Unsupported file_type: {file_type}")
 
+    print(f"✅ Completed: {file_type} | Holdings: {len(result.get('holdings', []))}")
     return result
+
+
+# =====================================================
+# ✅ NEW: MULTI-FILE PROCESSOR (DEDUP ACROSS FILES)
+# =====================================================
+def process_uploaded_files(
+    *,
+    file_paths: List[str],
+    file_types: List[str],
+    user_id: int,
+    portfolio_id: int,
+    password: Optional[str] = None,
+    member_id: Optional[int] = None,
+):
+    """
+    Processes MULTIPLE uploaded files in sequence.
+    Dedup applies ACROSS ALL files via dedupe_context.
+    """
+
+    if len(file_paths) != len(file_types):
+        raise ValueError("file_paths and file_types length mismatch")
+
+    all_holdings = []
+    total_value = 0.0
+
+    for idx, (path, ftype) in enumerate(zip(file_paths, file_types)):
+        print(f"\n🔁 Processing file {idx + 1}/{len(file_paths)} → {ftype}")
+
+        result = process_uploaded_file(
+            file_path=path,
+            file_type=ftype,
+            user_id=user_id,
+            portfolio_id=portfolio_id,
+            password=password,
+            member_id=member_id,
+            clear_existing=False,  # IMPORTANT: never clear between files
+        )
+
+        all_holdings.extend(result.get("holdings", []))
+        total_value += result.get("total_value", 0.0)
+
+    return {
+        "holdings": all_holdings,
+        "total_value": round(total_value, 2),
+    }

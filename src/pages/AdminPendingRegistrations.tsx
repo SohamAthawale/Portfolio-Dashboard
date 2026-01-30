@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { Layout } from "../components/Layout";
 import { motion } from "framer-motion";
 import Logo from "../components/logo";
-import { Mail, Phone, UserCheck} from "lucide-react";
+import { Mail, Phone, UserCheck } from "lucide-react";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
+const API_BASE = import.meta.env.VITE_API_URL || '/pmsreports';
+
 
 // -----------------------------
 // TYPES
@@ -27,13 +28,33 @@ export default function AdminPendingRegistrations() {
   const [approved, setApproved] = useState<ApprovedUser[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Safe JSON helper (prevents crashes)
+  const safeJson = async (res: Response) => {
+    try {
+      const text = await res.text();
+      if (!text) return [];
+      const parsed = JSON.parse(text);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.error("Invalid JSON returned:", e);
+      return [];
+    }
+  };
+
   const fetchData = async () => {
     try {
-      const pRes = await fetch(`${API_BASE}/admin/pending-registrations`, { credentials: "include" });
-      const aRes = await fetch(`${API_BASE}/admin/approved-accounts`, { credentials: "include" });
+      const pRes = await fetch(`${API_BASE}/admin/pending-registrations`, {
+        credentials: "include",
+      });
+      const aRes = await fetch(`${API_BASE}/admin/approved-accounts`, {
+        credentials: "include",
+      });
 
-      setPending(await pRes.json());
-      setApproved(await aRes.json());
+      const pJson = await safeJson(pRes);
+      const aJson = await safeJson(aRes);
+
+      setPending(pJson);
+      setApproved(aJson);
     } catch (err) {
       console.error("Fetch error:", err);
     }
@@ -60,7 +81,12 @@ export default function AdminPendingRegistrations() {
     fetchData();
   };
 
-  if (loading) return <Layout><div className="p-8">Loading...</div></Layout>;
+  if (loading)
+    return (
+      <Layout>
+        <div className="p-8">Loading...</div>
+      </Layout>
+    );
 
   return (
     <Layout>
@@ -77,7 +103,12 @@ export default function AdminPendingRegistrations() {
           ) : (
             <div className="space-y-4">
               {pending.map((p) => (
-                <PendingCard key={p.id} user={p} onApprove={approve} onReject={reject} />
+                <PendingCard
+                  key={p.id}
+                  user={p}
+                  onApprove={approve}
+                  onReject={reject}
+                />
               ))}
             </div>
           )}
@@ -103,7 +134,7 @@ export default function AdminPendingRegistrations() {
 }
 
 // =======================================================================
-// COMPONENT: Pending Registration Card (matches service request UI)
+// COMPONENT: Pending Registration Card
 // =======================================================================
 const PendingCard = ({
   user,
@@ -126,8 +157,12 @@ const PendingCard = ({
         </div>
 
         <div className="text-sm text-gray-700 space-y-1">
-          <div className="flex items-center gap-2"><Mail size={14} /> {user.email}</div>
-          <div className="flex items-center gap-2"><Phone size={14} /> {user.phone}</div>
+          <div className="flex items-center gap-2">
+            <Mail size={14} /> {user.email}
+          </div>
+          <div className="flex items-center gap-2">
+            <Phone size={14} /> {user.phone}
+          </div>
         </div>
       </div>
 
@@ -165,13 +200,21 @@ const ApprovedCard = ({ user }: { user: ApprovedUser }) => {
       <div className="flex-1 space-y-2">
         <div className="flex items-center gap-3 mb-1">
           <UserCheck size={20} className="text-green-700" />
-          <div className="font-semibold text-lg">User #{user.user_id} (Approved)</div>
+          <div className="font-semibold text-lg">
+            User #{user.user_id} (Approved)
+          </div>
         </div>
 
         <div className="text-sm text-gray-700 space-y-1">
-          <div className="flex items-center gap-2"><Mail size={14} /> {user.email}</div>
-          <div className="flex items-center gap-2"><Phone size={14} /> {user.phone}</div>
-          <div className="text-xs text-gray-500">Created: {new Date(user.created_at).toLocaleString()}</div>
+          <div className="flex items-center gap-2">
+            <Mail size={14} /> {user.email}
+          </div>
+          <div className="flex items-center gap-2">
+            <Phone size={14} /> {user.phone}
+          </div>
+          <div className="text-xs text-gray-500">
+            Created: {new Date(user.created_at).toLocaleString()}
+          </div>
         </div>
       </div>
     </motion.div>

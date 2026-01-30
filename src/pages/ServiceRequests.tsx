@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Layout } from "../components/Layout";
 import { Plus } from "lucide-react";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
+const API_BASE = import.meta.env.VITE_API_URL || '/pmsreports';
 
 interface ServiceRequest {
   id: number;

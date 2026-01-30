@@ -1,8 +1,9 @@
+import os
 import re
 import fitz  # PyMuPDF
 from typing import List, Dict, Tuple
 from db import get_db_conn
-
+from dedupe_context import is_duplicate, mark_seen
 
 # ---------------------------------------------------------
 # STEP 1: Extract text from PDF
@@ -384,6 +385,7 @@ def parse_nsdl_ecas_text(text: str) -> Tuple[List[Dict], float]:
 # ---------------------------------------------------------
 def process_nsdl_file(
     file_path: str,
+    file_type: str,
     user_id: int,
     portfolio_id: int,
     password: str | None = None,
@@ -435,6 +437,30 @@ def process_nsdl_file(
         inserted = 0
 
         for h in holdings:
+            if is_duplicate(h):
+                cur.execute(
+            """
+            INSERT INTO portfolio_duplicates (
+                portfolio_id, user_id, member_id,
+                isin_no, fund_name, units, nav, valuation,
+                file_type, source_file
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """,
+            (
+                portfolio_id,
+                user_id,
+                member_id,
+                h.get("isin_no"),
+                h.get("fund_name"),
+                h.get("units"),
+                h.get("nav"),
+                h.get("valuation"),
+                file_type,           # pass this down
+                os.path.basename(file_path),
+            )
+        )        
+                continue
             isin = (h.get("isin_no") or "").strip()
             units = float(h.get("units") or 0.0)
             nav = float(h.get("nav") or 0.0)
@@ -507,6 +533,7 @@ def process_nsdl_file(
                     htype,
                 ),
             )
+            mark_seen(h) 
             inserted += 1
 
         conn.commit()
