@@ -3,6 +3,7 @@ from typing import Optional, List
 
 import fitz  # PyMuPDF
 
+from dedupe_context import reset_dedup_context
 from cams_parser import process_cams_file
 from nsdl_parser import process_nsdl_file
 from cdsl_parser import process_cdsl_file
@@ -151,7 +152,7 @@ def process_uploaded_files(
 
     if len(file_paths) != len(file_types):
         raise ValueError("file_paths and file_types length mismatch")
-
+    reset_dedup_context()
     all_holdings = []
     total_value = 0.0
 

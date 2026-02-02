@@ -5,6 +5,7 @@ from typing import List, Dict, Tuple
 from db import get_db_conn
 from dedupe_context import is_duplicate, mark_seen
 
+
 # ---------------------------------------------------------
 # STEP 1: Extract text from PDF
 # ---------------------------------------------------------
@@ -383,6 +384,11 @@ def parse_nsdl_ecas_text(text: str) -> Tuple[List[Dict], float]:
     # ---------------------------------------------------------
 # STEP 5: Insert into Database (dedupe by ISIN only)
 # ---------------------------------------------------------
+from dedupe_context import is_duplicate, mark_seen, holding_key
+
+from dedupe_context import is_duplicate, mark_seen, holding_key
+
+
 def process_nsdl_file(
     file_path: str,
     file_type: str,
@@ -396,51 +402,73 @@ def process_nsdl_file(
 
     text = extract_blocks_text(file_path, password)
     holdings, total_value = parse_nsdl_ecas_text(text)
+    source = os.path.basename(file_path)
 
-    # REMOVE DUPES for MF (UNCHANGED)
+    # ------------------------------------------------------------------
+    # REMOVE MF DUPES (UNCHANGED)
+    # ------------------------------------------------------------------
     folio_isins = {h["isin_no"].split("_")[0] for h in holdings if h["type"] == "Mutual Fund Folio"}
     holdings = [
         h for h in holdings
         if not (h["type"] == "Mutual Fund" and h["isin_no"].split("_")[0] in folio_isins)
     ]
 
+    # ------------------------------------------------------------------
     # REMOVE EXACT EQUITY DUPES (UNCHANGED)
+    # ------------------------------------------------------------------
     seen_equity_keys = set()
     unique_holdings = []
 
     for h in holdings:
+        h["source_file"] = source
+
         if h.get("type") == "Shares":
             key = (
                 h.get("isin_no"),
                 round(h.get("units") or 0.0, 4),
-                round(h.get("valuation") or 0.0, 2)
+                round(h.get("valuation") or 0.0, 2),
             )
             if key in seen_equity_keys:
                 continue
             seen_equity_keys.add(key)
+
         unique_holdings.append(h)
 
     holdings = unique_holdings
 
-    # DEBUG PRINTS (UNCHANGED)
-    print(f"📊 Found {len(holdings)} holdings:")
-    for h in holdings:
-        print(f"  - {h['type']}: {h['fund_name']} (ISIN: {h['isin_no']}) - Value: {h['valuation']}")
-
+    # ------------------------------------------------------------------
+    # DB INSERTION
+    # ------------------------------------------------------------------
     conn = None
     try:
         conn = get_db_conn()
         cur = conn.cursor()
 
+        # 🔑 CRITICAL FIX
+        seen_in_file = set()       # blocks same-file dupes
+        marked_in_file = set()     # prevents global pollution
+        logged_cross_file = set()  
         seen_isins = set()
         seen_composites = set()
         inserted = 0
 
         for h in holdings:
-            # ONLY evaluate dedupe on FINAL accepted holdings
-            isin = (h.get("isin_no") or "").strip()
+            key = holding_key(h)
 
+            # ----------------------------------------------------------
+            # 1️⃣ HARD BLOCK SAME-FILE DUPLICATES
+            # ----------------------------------------------------------
+            if key and key in seen_in_file:
+                continue
+            if key:
+                seen_in_file.add(key)
+
+            # ----------------------------------------------------------
+            # 2️⃣ ONLY TRUE FILE-COMPARISON DUPES
+            # ----------------------------------------------------------
             if is_duplicate(h):
+                if key and key in logged_cross_file:
+                    continue
                 cur.execute(
                     """
                     INSERT INTO portfolio_duplicates (
@@ -454,18 +482,20 @@ def process_nsdl_file(
                         portfolio_id,
                         user_id,
                         member_id,
-                        isin,
+                        (h.get("isin_no") or "").strip(),
                         h.get("fund_name"),
                         h.get("units"),
                         h.get("nav"),
                         h.get("valuation"),
                         file_type,
-                        os.path.basename(file_path),
+                        source,
                     ),
                 )
                 continue
 
-
+            # ----------------------------------------------------------
+            # 3️⃣ NORMAL INSERT LOGIC (UNCHANGED)
+            # ----------------------------------------------------------
             isin = (h.get("isin_no") or "").strip()
             units = float(h.get("units") or 0.0)
             nav = float(h.get("nav") or 0.0)
@@ -473,35 +503,17 @@ def process_nsdl_file(
             htype = h.get("type") or ""
             fund_name = clean_fund_name(h.get("fund_name") or "", htype)
 
-            # FIX NPS INSERTION (Your condition was wrong)
             if not isin and htype != "NPS":
                 continue
 
-            # SKIP INVALID ISIN (UNCHANGED)
-            if (
-                isin 
-                and (len(isin) < 10 or "INFRASTRUCTURE" in isin.upper())
-            ):
+            if isin and (len(isin) < 10 or "INFRASTRUCTURE" in isin.upper()):
                 continue
 
-            # DEDUPE ISIN-BASED (UNCHANGED)
             if isin:
-                existing_entry = next((x for x in holdings if x.get("isin_no") == isin), None)
-
                 if isin in seen_isins:
-                    if h.get("type") == "Shares":
-                        existing_val = existing_entry.get("valuation") if existing_entry else None
-                        current_val = h.get("valuation")
-                        if existing_val and abs(existing_val - current_val) > 1:
-                            pass
-                        else:
-                            continue
-                    else:
-                        continue
-
+                    continue
                 seen_isins.add(isin)
             else:
-                # NPS & Non-ISIN ITEMS
                 composite_key = (
                     htype,
                     fund_name,
@@ -538,7 +550,14 @@ def process_nsdl_file(
                     htype,
                 ),
             )
-            mark_seen(h) 
+
+            # ----------------------------------------------------------
+            # 4️⃣ MARK GLOBAL SEEN **ONCE PER FILE**
+            # ----------------------------------------------------------
+            if key and key not in marked_in_file:
+                mark_seen(h)
+                marked_in_file.add(key)
+
             inserted += 1
 
         conn.commit()

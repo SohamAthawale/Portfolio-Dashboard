@@ -343,7 +343,7 @@ def process_cdsl_file(
     print(f"📗 Processing CDSL eCAS for user {user_id}, portfolio {portfolio_id}")
     text = extract_blocks_text(file_path, password)
     holdings, total_value = parse_cdsl_ecas_text(text)
-
+    source = os.path.basename(file_path)
     inserted = 0
 
     try:
@@ -363,6 +363,7 @@ def process_cdsl_file(
                 )
 
         for h in holdings:
+            h["source_file"] = source
             if is_duplicate(h):
                 cur.execute(
             """

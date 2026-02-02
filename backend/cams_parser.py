@@ -142,7 +142,7 @@ def process_cams_file(
 
     blocks = extract_cams_blocks(file_path, password)
     holdings, total_value = parse_cams_two_column(blocks)
-
+    source = os.path.basename(file_path)
     conn = None
     inserted = 0   # ✅ ADDED (safe)
 
@@ -162,7 +162,8 @@ def process_cams_file(
                     (user_id, portfolio_id),
                 )
 
-        for h in holdings:     # ✅ ADDED
+        for h in holdings:
+            h["source_file"] = source     # ✅ ADDED
             if is_duplicate(h):
                 cur.execute(
             """

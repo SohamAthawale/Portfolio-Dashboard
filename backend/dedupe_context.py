@@ -1,60 +1,62 @@
-# dedup_context.py
+from collections import defaultdict
 
-_seen_keys: set[tuple] = set()
+# (isin, units, valuation) -> set(source_file)
+_seen: dict[tuple, set[str]] = defaultdict(set)
 
 
 def reset_dedup_context():
-    """
-    MUST be called once per file upload
-    """
-    _seen_keys.clear()
+    """Call once per upload request"""
+    _seen.clear()
 
 
 def normalize_isin(isin: str) -> str:
     return (isin or "").strip().upper()
 
 
-def dedup_key(h: dict) -> tuple | None:
-    """
-    Cross-file dedup rule:
-    Same ISIN + same units + same valuation
-    BUT from a DIFFERENT source_file.
-    """
-    isin = normalize_isin(h.get("isin_no"))
-    source_file = h.get("source_file")
+import re
 
-    if not isin or not source_file:
+def holding_key(h: dict) -> tuple | None:
+    isin = normalize_isin(h.get("isin_no"))
+    units = round(float(h.get("units") or 0.0), 6)
+    valuation = round(float(h.get("valuation") or 0.0), 2)
+
+    # ✅ ISIN-based instruments
+    if isin:
+        return (isin, units, valuation)
+
+    # ✅ NON-ISIN instruments (NPS, Pension, etc.)
+    fund_name = (h.get("fund_name") or "").strip().upper()
+    htype = (h.get("type") or "").strip().upper()
+
+    if not fund_name or not htype:
         return None
 
-    return (
-        source_file,
-        isin,
-        round(float(h.get("units") or 0.0), 6),
-        round(float(h.get("valuation") or 0.0), 2),
-    )
+    # normalize spacing & symbols (PDF noise)
+    fund_name = re.sub(r"\s+", " ", fund_name)
+    fund_name = re.sub(r"[–—−]", "-", fund_name)
 
+    return (htype, fund_name, units, valuation)
 
 def is_duplicate(h: dict) -> bool:
-    key = dedup_key(h)
-    if not key:
+    """
+    ✅ ONLY cross-file duplicates
+    ❌ NEVER same-file NSDL repeats
+    """
+    key = holding_key(h)
+    source = h.get("source_file")
+
+    if not key or not source:
         return False
 
-    _, isin, units, valuation = key
+    seen_sources = _seen.get(key, set())
 
-    # Check same holding from a DIFFERENT file
-    for seen_source, seen_isin, seen_units, seen_val in _seen_keys:
-        if (
-            seen_isin == isin
-            and seen_units == units
-            and seen_val == valuation
-            and seen_source != key[0]
-        ):
-            return True
-
-    return False
+    # duplicate ONLY if seen in another file
+    return bool(seen_sources and source not in seen_sources)
 
 
 def mark_seen(h: dict):
-    key = dedup_key(h)
-    if key:
-        _seen_keys.add(key)
+    key = holding_key(h)
+    source = h.get("source_file")
+
+    if key and source:
+        _seen[key].add(source)
