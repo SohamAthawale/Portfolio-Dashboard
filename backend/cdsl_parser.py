@@ -338,18 +338,36 @@ def process_cdsl_file(
     *,
     member_id: int | None = None,
     clear_existing: bool = False,
-    file_type: str
+    file_type: str,
 ):
     print(f"📗 Processing CDSL eCAS for user {user_id}, portfolio {portfolio_id}")
+
     text = extract_blocks_text(file_path, password)
     holdings, total_value = parse_cdsl_ecas_text(text)
     source = os.path.basename(file_path)
     inserted = 0
 
+    def normalize_type(t: str) -> str:
+        t = (t or "").strip().lower()
+        if t in {"mutual fund", "mutual", "mf", "mutual fund folio", "folio"}:
+            return "mutual fund"
+        if t in {"equity", "share", "shares", "stock", "stocks"}:
+            return "equity"
+        if t == "nps":
+            return "nps"
+        if t in {"govt security", "government security"}:
+            return "govt security"
+        if t in {"corporate bond", "bond"}:
+            return "corporate bond"
+        return ""
+
     try:
         conn = get_db_conn()
         cur = conn.cursor()
 
+        # --------------------------------------------------
+        # OPTIONAL CLEAR EXISTING
+        # --------------------------------------------------
         if clear_existing:
             if member_id:
                 cur.execute(
@@ -364,39 +382,55 @@ def process_cdsl_file(
 
         for h in holdings:
             h["source_file"] = source
+            htype = normalize_type(h.get("type"))
+
+            # --------------------------------------------------
+            # DUPLICATES → portfolio_duplicates (FULL METADATA)
+            # --------------------------------------------------
             if is_duplicate(h):
                 cur.execute(
-            """
-            INSERT INTO portfolio_duplicates (
-                portfolio_id, user_id, member_id,
-                isin_no, fund_name, units, nav, valuation,
-                file_type, source_file
-            )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            """,
-            (
-                portfolio_id,
-                user_id,
-                member_id,
-                h.get("isin_no"),
-                h.get("fund_name"),
-                h.get("units"),
-                h.get("nav"),
-                h.get("valuation"),
-                file_type,           # pass this down
-                os.path.basename(file_path),
-            )
-        )        
+                    """
+                    INSERT INTO portfolio_duplicates (
+                        portfolio_id, user_id, member_id,
+                        isin_no, fund_name,
+                        units, nav,
+                        invested_amount, valuation,
+                        category, sub_category, type,
+                        file_type, source_file
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """,
+                    (
+                        portfolio_id,
+                        user_id,
+                        member_id,
+                        h.get("isin_no"),
+                        h.get("fund_name"),
+                        float(h.get("units") or 0.0),
+                        float(h.get("nav") or 0.0),
+                        float(h.get("invested_amount") or 0.0),
+                        float(h.get("valuation") or 0.0),
+                        h.get("category") or "",
+                        h.get("sub_category") or "",
+                        htype,
+                        file_type,
+                        source,
+                    ),
+                )
                 continue
 
+            # --------------------------------------------------
+            # NORMAL INSERT → portfolios
+            # --------------------------------------------------
             cur.execute(
                 """
                 INSERT INTO portfolios (
-                    portfolio_id, user_id, member_id, fund_name, isin_no,
+                    portfolio_id, user_id, member_id,
+                    fund_name, isin_no,
                     units, nav, invested_amount, valuation,
                     category, sub_category, type, created_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
                 """,
                 (
                     portfolio_id,
@@ -404,13 +438,13 @@ def process_cdsl_file(
                     member_id,
                     h["fund_name"],
                     h["isin_no"],
-                    float(h["units"]),
-                    float(h["nav"]),
-                    float(h["invested_amount"]),
-                    float(h["valuation"]),
-                    h["category"],
-                    h["sub_category"],
-                    h["type"],
+                    float(h.get("units") or 0.0),
+                    float(h.get("nav") or 0.0),
+                    float(h.get("invested_amount") or 0.0),
+                    float(h.get("valuation") or 0.0),
+                    h.get("category") or "",
+                    h.get("sub_category") or "",
+                    htype,
                 ),
             )
 

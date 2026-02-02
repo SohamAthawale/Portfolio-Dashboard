@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, PlusCircle, Trash2 } from 'lucide-react';
 import { Layout } from '../components/Layout';
 import { motion } from 'framer-motion';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/pmsreports';
 
+/* ===============================
+   Types
+=============================== */
 interface PortfolioEntry {
   fund_name: string;
   isin_no: string;
@@ -25,6 +28,7 @@ interface DuplicateSummary {
 }
 
 interface DuplicateDetail {
+  id: number;
   isin_no: string;
   fund_name: string;
   units: number;
@@ -33,10 +37,15 @@ interface DuplicateDetail {
   file_type: string;
   source_file: string;
   created_at: string;
+  linked_portfolio_entry_id?: number | null;
 }
 
+/* ===============================
+   Component
+=============================== */
 export default function PortfolioAudit() {
   const { portfolio_id } = useParams<{ portfolio_id: string }>();
+
   const [entries, setEntries] = useState<PortfolioEntry[]>([]);
   const [dupSummary, setDupSummary] = useState<DuplicateSummary[]>([]);
   const [dupDetails, setDupDetails] = useState<DuplicateDetail[]>([]);
@@ -44,39 +53,60 @@ export default function PortfolioAudit() {
   const [error, setError] = useState('');
 
   /* ===============================
-     Fetch data
+     Load data
   =============================== */
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [e, s, d] = await Promise.all([
-          fetch(`${API_BASE}/portfolio/${portfolio_id}/entries`, {
-            credentials: 'include',
-          }),
-          fetch(`${API_BASE}/portfolio/${portfolio_id}/duplicates/summary`, {
-            credentials: 'include',
-          }),
-          fetch(`${API_BASE}/portfolio/${portfolio_id}/duplicates/detail`, {
-            credentials: 'include',
-          }),
-        ]);
+  const load = async () => {
+    try {
+      setLoading(true);
 
-        if (!e.ok || !s.ok || !d.ok) {
-          throw new Error('Failed to load portfolio audit data');
-        }
+      const [e, s, d] = await Promise.all([
+        fetch(`${API_BASE}/portfolio/${portfolio_id}/entries`, {
+          credentials: 'include',
+        }),
+        fetch(`${API_BASE}/portfolio/${portfolio_id}/duplicates/summary`, {
+          credentials: 'include',
+        }),
+        fetch(`${API_BASE}/portfolio/${portfolio_id}/duplicates/detail`, {
+          credentials: 'include',
+        }),
+      ]);
 
-        setEntries(await e.json());
-        setDupSummary(await s.json());
-        setDupDetails(await d.json());
-      } catch (err: any) {
-        setError(err.message || 'Error loading audit data');
-      } finally {
-        setLoading(false);
+      if (!e.ok || !s.ok || !d.ok) {
+        throw new Error('Failed to load portfolio audit data');
       }
-    };
 
+      setEntries(await e.json());
+      setDupSummary(await s.json());
+      setDupDetails(await d.json());
+    } catch (err: any) {
+      setError(err.message || 'Error loading audit data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     load();
   }, [portfolio_id]);
+
+  /* ===============================
+     Actions
+  =============================== */
+  const acceptDuplicate = async (dupId: number) => {
+    await fetch(
+      `${API_BASE}/portfolio/duplicates/${dupId}/accept`,
+      { method: 'POST', credentials: 'include' }
+    );
+    load();
+  };
+
+  const removeDuplicate = async (dupId: number) => {
+    await fetch(
+      `${API_BASE}/portfolio/duplicates/${dupId}/remove`,
+      { method: 'DELETE', credentials: 'include' }
+    );
+    load();
+  };
 
   /* ===============================
      Loading / Error
@@ -192,7 +222,7 @@ export default function PortfolioAudit() {
         </div>
 
         {/* ===============================
-           DUPLICATE DETAIL
+           DUPLICATE DETAIL + ACTIONS
         =============================== */}
         {dupDetails.length > 0 && (
           <div className="bg-white shadow rounded-xl overflow-x-auto">
@@ -210,11 +240,12 @@ export default function PortfolioAudit() {
                   <th className="px-4 py-2">Value</th>
                   <th className="px-4 py-2">File</th>
                   <th className="px-4 py-2">Source</th>
+                  <th className="px-4 py-2">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {dupDetails.map((d, i) => (
-                  <tr key={i} className="border-t">
+                {dupDetails.map((d) => (
+                  <tr key={d.id} className="border-t">
                     <td className="px-4 py-2">{d.isin_no || '—'}</td>
                     <td className="px-4 py-2">{d.fund_name}</td>
                     <td className="px-4 py-2 text-right">{d.units}</td>
@@ -224,6 +255,23 @@ export default function PortfolioAudit() {
                     </td>
                     <td className="px-4 py-2">{d.source_file}</td>
                     <td className="px-4 py-2">{d.file_type}</td>
+                    <td className="px-4 py-2">
+                      {!d.linked_portfolio_entry_id ? (
+                        <button
+                          onClick={() => acceptDuplicate(d.id)}
+                          className="text-green-600 hover:underline flex items-center gap-1"
+                        >
+                          <PlusCircle size={16} /> Add
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => removeDuplicate(d.id)}
+                          className="text-red-600 hover:underline flex items-center gap-1"
+                        >
+                          <Trash2 size={16} /> Remove
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

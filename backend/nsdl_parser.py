@@ -387,8 +387,6 @@ def parse_nsdl_ecas_text(text: str) -> Tuple[List[Dict], float]:
 from dedupe_context import is_duplicate, mark_seen, holding_key
 
 from dedupe_context import is_duplicate, mark_seen, holding_key
-
-
 def process_nsdl_file(
     file_path: str,
     file_type: str,
@@ -444,39 +442,49 @@ def process_nsdl_file(
         conn = get_db_conn()
         cur = conn.cursor()
 
-        # 🔑 CRITICAL FIX
-        seen_in_file = set()       # blocks same-file dupes
-        marked_in_file = set()     # prevents global pollution
-        logged_cross_file = set()  
+        seen_in_file = set()
+        marked_in_file = set()
         seen_isins = set()
         seen_composites = set()
         inserted = 0
 
+        def normalize_type(t: str) -> str:
+            t = (t or "").strip().lower()
+            if t in {"mutual fund", "mutual", "mf", "mutual fund folio", "folio"}:
+                return "mutual fund"
+            if t in {"shares", "share", "equity", "stock", "stocks"}:
+                return "equity"
+            if t == "nps":
+                return "nps"
+            if t in {"govt security", "government security"}:
+                return "govt security"
+            if t in {"corporate bond", "bond"}:
+                return "corporate bond"
+            return ""
+
         for h in holdings:
             key = holding_key(h)
 
-            # ----------------------------------------------------------
-            # 1️⃣ HARD BLOCK SAME-FILE DUPLICATES
-            # ----------------------------------------------------------
+            # 1️⃣ SAME FILE DUPES
             if key and key in seen_in_file:
                 continue
             if key:
                 seen_in_file.add(key)
 
-            # ----------------------------------------------------------
-            # 2️⃣ ONLY TRUE FILE-COMPARISON DUPES
-            # ----------------------------------------------------------
+            htype = normalize_type(h.get("type"))
+
+            # 2️⃣ CROSS-FILE DUPES → portfolio_duplicates
             if is_duplicate(h):
-                if key and key in logged_cross_file:
-                    continue
                 cur.execute(
                     """
                     INSERT INTO portfolio_duplicates (
                         portfolio_id, user_id, member_id,
-                        isin_no, fund_name, units, nav, valuation,
+                        isin_no, fund_name, units, nav,
+                        invested_amount, valuation,
+                        category, sub_category, type,
                         file_type, source_file
                     )
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     """,
                     (
                         portfolio_id,
@@ -486,24 +494,25 @@ def process_nsdl_file(
                         h.get("fund_name"),
                         h.get("units"),
                         h.get("nav"),
+                        float(h.get("invested_amount") or 0.0),
                         h.get("valuation"),
+                        h.get("category") or "",
+                        h.get("sub_category") or "",
+                        htype,
                         file_type,
                         source,
                     ),
                 )
                 continue
 
-            # ----------------------------------------------------------
-            # 3️⃣ NORMAL INSERT LOGIC (UNCHANGED)
-            # ----------------------------------------------------------
+            # 3️⃣ NORMAL INSERT → portfolios
             isin = (h.get("isin_no") or "").strip()
             units = float(h.get("units") or 0.0)
             nav = float(h.get("nav") or 0.0)
             valuation = float(h.get("valuation") or 0.0)
-            htype = h.get("type") or ""
             fund_name = clean_fund_name(h.get("fund_name") or "", htype)
 
-            if not isin and htype != "NPS":
+            if not isin and htype != "nps":
                 continue
 
             if isin and (len(isin) < 10 or "INFRASTRUCTURE" in isin.upper()):
@@ -551,9 +560,6 @@ def process_nsdl_file(
                 ),
             )
 
-            # ----------------------------------------------------------
-            # 4️⃣ MARK GLOBAL SEEN **ONCE PER FILE**
-            # ----------------------------------------------------------
             if key and key not in marked_in_file:
                 mark_seen(h)
                 marked_in_file.add(key)

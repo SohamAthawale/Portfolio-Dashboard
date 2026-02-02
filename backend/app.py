@@ -865,7 +865,7 @@ def dashboard_data():
         normalize_isin(h["isin_no"])
         for h in holdings
         if h.get("isin_no")
-        and h.get("type", "").lower() in {
+        and str(h.get("type") or "").lower() in {
             "mutual fund",
             "mutual fund folio",
             "mutual"
@@ -1143,8 +1143,8 @@ def dashboard_data():
         clean_holdings.append(holding_item)
 
 
-        cur.close()
-        conn.close()
+    cur.close()
+    conn.close()
 
         
     # -------------------------------------------------
@@ -2769,64 +2769,7 @@ def admin_user_detail(user_id):
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-@app.route("/pmsreports/portfolio/<int:portfolio_id>/entries")
-def portfolio_entries(portfolio_id):
-    conn = get_db_conn()
-    cur = conn.cursor()
 
-    cur.execute("""
-        SELECT *
-        FROM portfolios
-        WHERE portfolio_id = %s
-        ORDER BY fund_name
-    """, (portfolio_id,))
-
-    rows = cur.fetchall()
-    conn.close()
-    return jsonify(rows)
-@app.route("/pmsreports/portfolio/<int:portfolio_id>/duplicates/summary")
-def portfolio_duplicate_summary(portfolio_id):
-    conn = get_db_conn()
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT
-            isin_no,
-            fund_name,
-            COUNT(*) AS occurrences,
-            ARRAY_AGG(DISTINCT file_type) AS sources
-        FROM portfolio_duplicates
-        WHERE portfolio_id = %s
-        GROUP BY isin_no, fund_name
-        ORDER BY occurrences DESC
-    """, (portfolio_id,))
-
-    rows = cur.fetchall()
-    conn.close()
-    return jsonify(rows)
-@app.route("/pmsreports/portfolio/<int:portfolio_id>/duplicates/detail")
-def portfolio_duplicate_detail(portfolio_id):
-    conn = get_db_conn()
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT
-            isin_no,
-            fund_name,
-            valuation,
-            units,
-            nav,
-            file_type,
-            source_file,
-            created_at
-        FROM portfolio_duplicates
-        WHERE portfolio_id = %s
-        ORDER BY isin_no, created_at
-    """, (portfolio_id,))
-
-    rows = cur.fetchall()
-    conn.close()
-    return jsonify(rows)
 
 @app.route("/pmsreports/portfolio/latest")
 def get_latest_portfolio():
@@ -2855,8 +2798,232 @@ def get_latest_portfolio():
     return jsonify({
         "portfolio_id": int(row["portfolio_id"])
     }), 200
+from flask import jsonify, request, session
+from psycopg2.extras import RealDictCursor
+from db import get_db_conn
 
-# ---------- Serve React ----------
+# ============================================================
+# ACCEPT DUPLICATE → INSERT INTO portfolios
+# ============================================================
+@app.route("/pmsreports/portfolio/duplicates/<int:dup_id>/accept", methods=["POST"])
+def accept_duplicate(dup_id):
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        # 1️⃣ Fetch duplicate
+        cur.execute("""
+            SELECT *
+            FROM portfolio_duplicates
+            WHERE id = %s AND user_id = %s
+        """, (dup_id, user_id))
+        dup = cur.fetchone()
+
+        if not dup:
+            return jsonify({"error": "Duplicate not found"}), 404
+
+        if dup["linked_portfolio_entry_id"]:
+            return jsonify({"error": "Already accepted"}), 409
+
+        # 2️⃣ Insert into portfolios (NO duplicate metadata)
+        cur.execute("""
+                INSERT INTO portfolios (
+                    user_id,
+                    member_id,
+                    portfolio_id,
+                    fund_name,
+                    isin_no,
+                    units,
+                    nav,
+                    invested_amount,
+                    valuation,
+                    category,
+                    sub_category,
+                    type,
+                    created_at
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+                RETURNING id
+            """, (
+                dup["user_id"],
+                dup["member_id"],
+                dup["portfolio_id"],
+                dup["fund_name"],
+                dup["isin_no"],
+                dup["units"],
+                dup["nav"],
+                dup["invested_amount"],
+                dup["valuation"],
+                dup.get("category") or "",
+                dup.get("sub_category") or "",
+                dup.get("type") or "",
+            ))
+
+
+        portfolio_row_id = cur.fetchone()["id"]
+
+        # 3️⃣ Link duplicate → portfolio entry
+        cur.execute("""
+            UPDATE portfolio_duplicates
+            SET resolved = TRUE,
+                resolved_at = NOW(),
+                linked_portfolio_entry_id = %s
+            WHERE id = %s
+        """, (portfolio_row_id, dup_id))
+
+        conn.commit()
+        return jsonify({"status": "accepted"}), 200
+
+    except Exception as e:
+        conn.rollback()
+        raise e
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+# ============================================================
+# REMOVE DUPLICATE → DELETE FROM portfolios
+# ============================================================
+@app.route("/pmsreports/portfolio/duplicates/<int:dup_id>/remove", methods=["DELETE"])
+def remove_duplicate(dup_id):
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        # 1️⃣ Find linked portfolio entry
+        cur.execute("""
+            SELECT linked_portfolio_entry_id
+            FROM portfolio_duplicates
+            WHERE id = %s AND user_id = %s
+        """, (dup_id, user_id))
+        row = cur.fetchone()
+
+        if not row or not row["linked_portfolio_entry_id"]:
+            return jsonify({"error": "Duplicate not accepted"}), 404
+
+        portfolio_entry_id = row["linked_portfolio_entry_id"]
+
+        # 2️⃣ Delete portfolio row
+        cur.execute("""
+            DELETE FROM portfolios
+            WHERE id = %s AND user_id = %s
+        """, (portfolio_entry_id, user_id))
+
+        # 3️⃣ Unlink duplicate (audit preserved)
+        cur.execute("""
+            UPDATE portfolio_duplicates
+            SET resolved = FALSE,
+                resolved_at = NULL,
+                linked_portfolio_entry_id = NULL
+            WHERE id = %s
+        """, (dup_id,))
+
+        conn.commit()
+        return jsonify({"status": "removed"}), 200
+
+    except Exception as e:
+        conn.rollback()
+        raise e
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+# ============================================================
+# DUPLICATE DETAIL (IMPORTANT: RETURNS id)
+# ============================================================
+@app.route("/pmsreports/portfolio/<int:portfolio_id>/duplicates/detail")
+def portfolio_duplicate_detail(portfolio_id):
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT
+                id,
+                isin_no,
+                fund_name,
+                units,
+                nav,
+                valuation,
+                file_type,
+                source_file,
+                created_at,
+                linked_portfolio_entry_id
+            FROM portfolio_duplicates
+            WHERE portfolio_id = %s
+            ORDER BY isin_no, created_at
+        """, (portfolio_id,))
+
+        rows = cur.fetchall()
+        return jsonify(rows)
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+# ============================================================
+# DUPLICATE SUMMARY
+# ============================================================
+@app.route("/pmsreports/portfolio/<int:portfolio_id>/duplicates/summary")
+def portfolio_duplicate_summary(portfolio_id):
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT
+                isin_no,
+                fund_name,
+                COUNT(*) AS occurrences,
+                ARRAY_AGG(DISTINCT file_type) AS sources
+            FROM portfolio_duplicates
+            WHERE portfolio_id = %s
+            GROUP BY isin_no, fund_name
+            ORDER BY occurrences DESC
+        """, (portfolio_id,))
+
+        return jsonify(cur.fetchall())
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+# ============================================================
+# PORTFOLIO ENTRIES (FINAL HOLDINGS)
+# ============================================================
+@app.route("/pmsreports/portfolio/<int:portfolio_id>/entries")
+def portfolio_entries(portfolio_id):
+    conn = get_db_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT *
+            FROM portfolios
+            WHERE portfolio_id = %s
+            ORDER BY fund_name
+        """, (portfolio_id,))
+
+        return jsonify(cur.fetchall())
+
+    finally:
+        cur.close()
+        conn.close()
+
 @app.errorhandler(404)
 def not_found(e):
     if os.path.exists(os.path.join(app.static_folder, "index.html")):

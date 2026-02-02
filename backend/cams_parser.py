@@ -143,13 +143,31 @@ def process_cams_file(
     blocks = extract_cams_blocks(file_path, password)
     holdings, total_value = parse_cams_two_column(blocks)
     source = os.path.basename(file_path)
+
     conn = None
-    inserted = 0   # ✅ ADDED (safe)
+    inserted = 0
+
+    def normalize_type(t: str) -> str:
+        t = (t or "").strip().lower()
+        if t in {"mutual fund", "mutual", "mf", "folio", "mutual fund folio"}:
+            return "mutual fund"
+        if t in {"equity", "share", "shares", "stock", "stocks"}:
+            return "equity"
+        if t == "nps":
+            return "nps"
+        if t in {"govt security", "government security"}:
+            return "govt security"
+        if t in {"corporate bond", "bond"}:
+            return "corporate bond"
+        return ""
 
     try:
         conn = get_db_conn()
         cur = conn.cursor()
 
+        # --------------------------------------------------
+        # OPTIONAL CLEAR EXISTING
+        # --------------------------------------------------
         if clear_existing:
             if member_id:
                 cur.execute(
@@ -163,31 +181,48 @@ def process_cams_file(
                 )
 
         for h in holdings:
-            h["source_file"] = source     # ✅ ADDED
+            h["source_file"] = source
+
+            htype = normalize_type(h.get("type"))
+
+            # --------------------------------------------------
+            # DUPLICATES → portfolio_duplicates (FULL METADATA)
+            # --------------------------------------------------
             if is_duplicate(h):
                 cur.execute(
-            """
-            INSERT INTO portfolio_duplicates (
-                portfolio_id, user_id, member_id,
-                isin_no, fund_name, units, nav, valuation,
-                file_type, source_file
-            )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            """,
-            (
-                portfolio_id,
-                user_id,
-                member_id,
-                h.get("isin_no"),
-                h.get("fund_name"),
-                h.get("units"),
-                h.get("nav"),
-                h.get("valuation"),
-                file_type,           # pass this down
-                os.path.basename(file_path),
-            )
-        )        
+                    """
+                    INSERT INTO portfolio_duplicates (
+                        portfolio_id, user_id, member_id,
+                        isin_no, fund_name,
+                        units, nav,
+                        invested_amount, valuation,
+                        category, sub_category, type,
+                        file_type, source_file
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """,
+                    (
+                        portfolio_id,
+                        user_id,
+                        member_id,
+                        h.get("isin_no"),
+                        h.get("fund_name"),
+                        h.get("units"),
+                        h.get("nav"),
+                        float(h.get("invested_amount") or 0.0),
+                        h.get("valuation"),
+                        h.get("category") or "",
+                        h.get("sub_category") or "",
+                        htype,
+                        file_type,
+                        source,
+                    ),
+                )
                 continue
+
+            # --------------------------------------------------
+            # NORMAL INSERT → portfolios
+            # --------------------------------------------------
             cur.execute(
                 """
                 INSERT INTO portfolios (
@@ -206,16 +241,16 @@ def process_cams_file(
                     h["isin_no"],
                     h["units"],
                     h["nav"],
-                    h["invested_amount"],
+                    float(h.get("invested_amount") or 0.0),
                     h["valuation"],
                     h["category"],
                     h["sub_category"],
-                    h["type"],
+                    htype,
                 ),
             )
 
-            mark_seen(h)             # ✅ ADDED
-            inserted += 1            # ✅ ADDED
+            mark_seen(h)
+            inserted += 1
 
         conn.commit()
         cur.close()
