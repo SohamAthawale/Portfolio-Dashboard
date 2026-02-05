@@ -7,6 +7,7 @@ import { Search, ArrowUpDown } from "lucide-react";
 
 export interface Holding {
   company?: string;
+  amc: string;
   isin?: string;
   category?: string;
   sub_category?: string;

@@ -69,6 +69,22 @@ interface DashboardData {
   top_category: { category: string; value: number }[];
   holdings: Holding[];
 }
+const getAMC = (_amc?: string, company?: string) => {
+  if (!company) return "OTHERS";
+
+  const upper = company.toUpperCase();
+  const known = [
+    "UTI", "JM", "BANDHAN", "HDFC", "ICICI", "SBI",
+    "AXIS", "KOTAK", "NIPPON", "DSP", "TATA", "IDFC",
+    "MIRAE", "MOTILAL", "PARAG", "EDELWEISS"
+  ];
+
+  for (const k of known) {
+    if (upper.includes(k)) return k;
+  }
+
+  return "OTHERS";
+};
 
 /* ---------- Component start ---------- */
 export const Dashboard: React.FC = () => {
@@ -175,6 +191,92 @@ export const Dashboard: React.FC = () => {
   const safeTopAMC = Array.isArray(data?.top_amc) ? data!.top_amc : [];
   const safeTopCategory = Array.isArray(data?.top_category) ? data!.top_category : [];
   const safeHoldings = Array.isArray(data?.holdings) ? data!.holdings : [];
+  const mfHoldings = safeHoldings.filter(h =>
+  typeof h.isin === "string" && h.isin.startsWith("INF")
+);
+
+// Helper: always resolve AMC
+const getAMC = (amc?: string, company?: string) => {
+  if (amc && amc.trim()) return amc;
+
+  if (!company) return "OTHERS";
+
+  const upper = company.toUpperCase();
+  const known = [
+    "UTI", "JM", "BANDHAN", "HDFC", "ICICI", "SBI",
+    "AXIS", "KOTAK", "NIPPON", "DSP", "TATA", "IDFC",
+    "MIRAE", "MOTILAL", "PARAG", "EDELWEISS"
+  ];
+
+  for (const k of known) {
+    if (upper.includes(k)) return k;
+  }
+
+  return "OTHERS";
+};
+
+// Total invested per AMC
+const totalInvestedPerAMC = mfHoldings.reduce(
+  (acc: Record<string, number>, h) => {
+    const amc = getAMC(undefined, h.company);
+    acc[amc] = (acc[amc] ?? 0) + Number(h.invested_amount ?? 0);
+    return acc;
+  },
+  {}
+);
+
+type MFCategoryRow = {
+  amc: string;
+  category: string;
+  invested: number;
+  current: number;
+  holding_pct: number;
+  return_pct: number;
+};
+
+const mfCategoryTableData: MFCategoryRow[] = Object.values(
+  mfHoldings.reduce((acc: any, h) => {
+    const amc = getAMC(undefined, h.company);
+    const subCat = h.sub_category || h.category || "Others";
+    const key = `${amc}__${subCat}`;
+
+    if (!acc[key]) {
+      acc[key] = {
+        amc,
+        category: subCat,
+        invested: 0,
+        current: 0,
+      };
+    }
+
+    acc[key].invested += Number(h.invested_amount ?? 0);
+    acc[key].current += Number(h.value ?? 0);
+
+    return acc;
+  }, {})
+).map((row: any) => {
+  const totalAMC = totalInvestedPerAMC[row.amc] ?? 0;
+
+  return {
+    ...row,
+    holding_pct:
+      totalAMC > 0
+        ? Number(((row.invested / totalAMC) * 100).toFixed(2))
+        : 0,
+    return_pct:
+      row.invested > 0
+        ? Number((((row.current - row.invested) / row.invested) * 100).toFixed(2))
+        : 0,
+  };
+});
+
+// Optional but recommended
+mfCategoryTableData.sort((a, b) =>
+  a.amc === b.amc
+    ? a.category.localeCompare(b.category)
+    : a.amc.localeCompare(b.amc)
+);
+
 
   
   // PDF export (unchanged behavior)
@@ -579,6 +681,60 @@ export const Dashboard: React.FC = () => {
             )}
           </div>
         </div>
+        {/* MF CATEGORY SUMMARY TABLE */}
+<div className="pt-4 border-t border-gray-200 overflow-x-auto">
+  <h3 className="text-sm font-semibold mb-3">
+    Mutual Fund Category-wise Breakdown
+  </h3>
+
+  {mfCategoryTableData.length === 0 ? (
+    <div className="text-center text-gray-500 py-6">
+      No MF category data available
+    </div>
+  ) : (
+    <table className="min-w-full border border-gray-300 text-sm">
+      <thead className="bg-gray-100">
+        <tr>
+          <th className="border px-3 py-2 text-left">Mutual Fund</th>
+          <th className="border px-3 py-2 text-left">Category</th>
+          <th className="border px-3 py-2 text-right">Invested (₹)</th>
+          <th className="border px-3 py-2 text-right">Current (₹)</th>
+          <th className="border px-3 py-2 text-right">% Holdings</th>
+          <th className="border px-3 py-2 text-right">Return %</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {mfCategoryTableData.map((row, i) => (
+          <tr key={i} className="hover:bg-gray-50">
+            <td className="border px-3 py-2 font-medium">
+              {row.amc}
+            </td>
+            <td className="border px-3 py-2">
+              {row.category}
+            </td>
+            <td className="border px-3 py-2 text-right">
+              ₹{row.invested.toLocaleString("en-IN")}
+            </td>
+            <td className="border px-3 py-2 text-right">
+              ₹{row.current.toLocaleString("en-IN")}
+            </td>
+            <td className="border px-3 py-2 text-right">
+              {row.holding_pct}%
+            </td>
+            <td
+              className={`border px-3 py-2 text-right font-medium ${
+                row.return_pct >= 0 ? "text-green-600" : "text-red-600"
+              }`}
+            >
+              {row.return_pct}%
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )}
+</div>
 
         {/* HOLDINGS TABLE */}
         <div className="pt-4 border-t border-gray-200 overflow-x-auto">

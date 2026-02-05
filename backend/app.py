@@ -1126,6 +1126,7 @@ def dashboard_data():
 
         holding_item = {
             "company": h.get("fund_name"),
+            "amc": amc,
             "isin": isin,
             "category": h.get("category"),
             "sub_category": h.get("sub_category"),
