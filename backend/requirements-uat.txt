@@ -1,0 +1,8 @@
+# UAT environment requirements (Python 3.9)
+Flask
+Flask-Cors
+Flask-Session
+Werkzeug
+psycopg2-binary
+requests
+PyMuPDF
