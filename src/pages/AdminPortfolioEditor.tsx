@@ -170,15 +170,15 @@ export const AdminPortfolioEditor: React.FC = () => {
 
         {/* LEFT group → Logo + Title together */}
         <div className="flex items-center gap-4">
-          <Logo className="w-44 h-auto" />
-          <h1 className="text-2xl font-bold">Portfolio Editor — Admin</h1>
+          <Logo className="w-44" compact />
+          <h1 className="text-2xl font-bold">Portfolio Editor</h1>
         </div>
 
         {/* RIGHT group → Button */}
         <div>
           <button
             onClick={() => navigate("/admin/service-requests")}
-            className="px-3 py-2 bg-gray-100 rounded"
+            className="btn-secondary"
           >
             Back to Requests
           </button>
@@ -187,14 +187,14 @@ export const AdminPortfolioEditor: React.FC = () => {
       </div>
 
 
-        <div className="bg-white rounded-xl p-6 shadow space-y-4">
+        <div className="app-panel p-6 space-y-4">
           <div>
             <h3 className="font-semibold">Step 1 — Select portfolio_id for user {userId}</h3>
             {loading ? <p>Loading...</p> : (
               <div className="flex flex-wrap gap-2 mt-2">
                 {portfolioIds.length === 0 && <div className="text-sm text-gray-500">No portfolios found for this user.</div>}
                 {portfolioIds.map((pid) => (
-                  <button key={pid} onClick={() => { setSelectedPortfolioId(pid); setSelectedEntryId(null); }} className={`px-3 py-1 rounded ${selectedPortfolioId === pid ? "bg-blue-600 text-white" : "bg-gray-100"}`}>
+                  <button key={pid} onClick={() => { setSelectedPortfolioId(pid); setSelectedEntryId(null); }} className={`px-3 py-1 rounded-xl ${selectedPortfolioId === pid ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white" : "bg-slate-100 text-slate-700"}`}>
                     {pid}
                   </button>
                 ))}
@@ -208,14 +208,14 @@ export const AdminPortfolioEditor: React.FC = () => {
               {loading ? <p>Loading...</p> : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
                   {entries.map((e) => (
-                    <div key={e.id} className={`p-3 rounded border ${selectedEntryId === e.id ? "border-blue-500 bg-blue-50" : "bg-white"}`}>
+                    <div key={e.id} className={`p-3 rounded-xl border ${selectedEntryId === e.id ? "border-cyan-300 bg-cyan-50" : "bg-white border-slate-200"}`}>
                       <div className="flex justify-between">
                         <div>
                           <div className="font-semibold">{e.fund_name}</div>
                           <div className="text-sm text-gray-600">id: {e.id} • valuation: {e.valuation ?? "-"}</div>
                         </div>
                         <div>
-                          <button onClick={() => setSelectedEntryId(e.id)} className="px-2 py-1 bg-blue-600 text-white rounded">Edit</button>
+                          <button onClick={() => setSelectedEntryId(e.id)} className="px-2 py-1 bg-cyan-600 text-white rounded-lg">Edit</button>
                         </div>
                       </div>
                     </div>
@@ -231,70 +231,70 @@ export const AdminPortfolioEditor: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
                 <div>
                   <label className="block text-sm">Fund Name</label>
-                  <input value={(formState.fund_name ?? "") as string} onChange={(e) => handleChange("fund_name", e.target.value || null)} className="w-full border rounded px-2 py-1" />
+                  <input value={(formState.fund_name ?? "") as string} onChange={(e) => handleChange("fund_name", e.target.value || null)} className="app-input" />
                 </div>
 
                 <div>
                   <label className="block text-sm">Valuation</label>
-                  <input type="number" value={(formState.valuation ?? "") as any} onChange={(e) => handleChange("valuation", e.target.value ? parseFloat(e.target.value) : null)} className="w-full border rounded px-2 py-1" />
+                  <input type="number" value={(formState.valuation ?? "") as any} onChange={(e) => handleChange("valuation", e.target.value ? parseFloat(e.target.value) : null)} className="app-input" />
                 </div>
 
                 <div>
                   <label className="block text-sm">Units</label>
-                  <input type="number" value={(formState.units ?? "") as any} onChange={(e) => handleChange("units", e.target.value ? parseFloat(e.target.value) : null)} className="w-full border rounded px-2 py-1" />
+                  <input type="number" value={(formState.units ?? "") as any} onChange={(e) => handleChange("units", e.target.value ? parseFloat(e.target.value) : null)} className="app-input" />
                 </div>
 
                 <div>
                   <label className="block text-sm">Invested Amount</label>
-                  <input type="number" value={(formState.invested_amount ?? "") as any} onChange={(e) => handleChange("invested_amount", e.target.value ? parseFloat(e.target.value) : null)} className="w-full border rounded px-2 py-1" />
+                  <input type="number" value={(formState.invested_amount ?? "") as any} onChange={(e) => handleChange("invested_amount", e.target.value ? parseFloat(e.target.value) : null)} className="app-input" />
                 </div>
 
                 <div>
                   <label className="block text-sm">NAV</label>
-                  <input type="number" value={(formState.nav ?? "") as any} onChange={(e) => handleChange("nav", e.target.value ? parseFloat(e.target.value) : null)} className="w-full border rounded px-2 py-1" />
+                  <input type="number" value={(formState.nav ?? "") as any} onChange={(e) => handleChange("nav", e.target.value ? parseFloat(e.target.value) : null)} className="app-input" />
                 </div>
 
                 <div>
                   <label className="block text-sm">Category</label>
-                  <input value={(formState.category ?? "") as string} onChange={(e) => handleChange("category", e.target.value || null)} className="w-full border rounded px-2 py-1" />
+                  <input value={(formState.category ?? "") as string} onChange={(e) => handleChange("category", e.target.value || null)} className="app-input" />
                 </div>
 
                 <div>
                   <label className="block text-sm">Sub Category</label>
-                  <input value={(formState.sub_category ?? "") as string} onChange={(e) => handleChange("sub_category", e.target.value || null)} className="w-full border rounded px-2 py-1" />
+                  <input value={(formState.sub_category ?? "") as string} onChange={(e) => handleChange("sub_category", e.target.value || null)} className="app-input" />
                 </div>
 
                 <div>
                   <label className="block text-sm">ISIN</label>
-                  <input value={(formState.isin_no ?? "") as string} onChange={(e) => handleChange("isin_no", e.target.value || null)} className="w-full border rounded px-2 py-1" />
+                  <input value={(formState.isin_no ?? "") as string} onChange={(e) => handleChange("isin_no", e.target.value || null)} className="app-input" />
                 </div>
 
                 <div>
                   <label className="block text-sm">Booking Date</label>
-                  <input type="date" value={formState.booking_date ? String(formState.booking_date).split("T")[0] : ""} onChange={(e) => handleChange("booking_date", e.target.value || null)} className="w-full border rounded px-2 py-1" />
+                  <input type="date" value={formState.booking_date ? String(formState.booking_date).split("T")[0] : ""} onChange={(e) => handleChange("booking_date", e.target.value || null)} className="app-input" />
                 </div>
 
                 <div>
                   <label className="block text-sm">Transaction No</label>
-                  <input value={(formState.transaction_no ?? "") as string} onChange={(e) => handleChange("transaction_no", e.target.value || null)} className="w-full border rounded px-2 py-1" />
+                  <input value={(formState.transaction_no ?? "") as string} onChange={(e) => handleChange("transaction_no", e.target.value || null)} className="app-input" />
                 </div>
 
                 <div>
                   <label className="block text-sm">Type</label>
-                  <input value={(formState.type ?? "") as string} onChange={(e) => handleChange("type", e.target.value || null)} className="w-full border rounded px-2 py-1" />
+                  <input value={(formState.type ?? "") as string} onChange={(e) => handleChange("type", e.target.value || null)} className="app-input" />
                 </div>
 
                 <div>
                   <label className="block text-sm">Member ID</label>
-                  <input type="number" value={(formState.member_id ?? "") as any} onChange={(e) => handleChange("member_id", e.target.value ? parseInt(e.target.value) : null)} className="w-full border rounded px-2 py-1" />
+                  <input type="number" value={(formState.member_id ?? "") as any} onChange={(e) => handleChange("member_id", e.target.value ? parseInt(e.target.value) : null)} className="app-input" />
                 </div>
               </div>
 
               <div className="mt-4 flex gap-2">
-                <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded">
+                <button onClick={handleSave} disabled={saving} className="btn-primary">
                   {saving ? "Saving..." : "Save & Complete Request"}
                 </button>
-                <button onClick={() => navigate("/admin/service-requests")} className="px-4 py-2 border rounded">Cancel</button>
+                <button onClick={() => navigate("/admin/service-requests")} className="btn-secondary">Cancel</button>
               </div>
             </div>
           )}

@@ -174,7 +174,7 @@ def assign_default_role(user_id, cur):
             
 
 # ---------------------------------------------------------
-# USER REGISTRATION - PENDING APPROVAL
+# USER REGISTRATION - DIRECT ACTIVATION
 # ---------------------------------------------------------
 @app.route("/pmsreports/register", methods=["POST"])
 def register():
@@ -189,45 +189,59 @@ def register():
     if not phone.isdigit() or len(phone) != 10:
         return jsonify({"error": "Invalid phone number format"}), 400
 
-    existing_user = find_user(email)
-    if existing_user:
-        return jsonify({"error": "Email already registered"}), 409
-
     conn = get_db_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    cur.execute("SELECT id FROM pending_registrations WHERE email=%s OR phone=%s", (email, phone))
-    existing_pending = cur.fetchone()
+    try:
+        cur.execute(
+            "SELECT 1 FROM users WHERE LOWER(email) = %s LIMIT 1",
+            (email,),
+        )
+        if cur.fetchone():
+            conn.rollback()
+            return jsonify({"error": "Email already registered"}), 409
 
-    if existing_pending:
+        cur.execute(
+            "SELECT 1 FROM users WHERE phone = %s LIMIT 1",
+            (phone,),
+        )
+        if cur.fetchone():
+            conn.rollback()
+            return jsonify({"error": "Phone already registered"}), 409
+
+        password_hash = generate_password_hash(password)
+
+        cur.execute(
+            """
+            INSERT INTO users (email, phone, password_hash)
+            VALUES (%s, %s, %s)
+            RETURNING user_id, family_id
+            """,
+            (email, phone, password_hash),
+        )
+        row = cur.fetchone()
+
+        if not row:
+            conn.rollback()
+            return jsonify({"error": "Failed to create account"}), 500
+
+        user_id = row["user_id"]
+        family_id = row["family_id"]
+
+        assign_default_role(user_id, cur)
+        conn.commit()
+
+        return jsonify({
+            "message": "Account created successfully. You can now log in.",
+            "user_id": user_id,
+            "family_id": family_id,
+        }), 201
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": "Registration failed", "detail": str(e)}), 500
+    finally:
         cur.close()
         conn.close()
-        return jsonify({"error": "Registration already pending approval"}), 409
-
-    password_hash = generate_password_hash(password)
-
-    cur.execute("""
-        INSERT INTO pending_registrations (email, phone, password_hash)
-        VALUES (%s, %s, %s)
-        RETURNING id
-    """, (email, phone, password_hash))
-
-    row = cur.fetchone()
-    if not row:
-        cur.close()
-        conn.close()
-        return jsonify({"error": "Something went wrong"}), 500
-
-    pending_id = row["id"]
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    return jsonify({
-        "message": "Registration submitted. Waiting for admin approval.",
-        "pending_id": pending_id
-    }), 201
 
 
 # ---------------------------------------------------------
@@ -237,25 +251,10 @@ def register():
 @admin_required
 @login_required
 def get_pending_registrations():
-    conn = get_db_conn()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-
-    try:
-        cur.execute("""
-            SELECT id, email, phone, created_at
-            FROM pending_registrations
-            ORDER BY created_at ASC
-        """)
-        rows = cur.fetchall()
-
-    except Exception as e:
-        return jsonify({"error": "Failed to fetch pending registrations", "detail": str(e)}), 500
-
-    finally:
-        cur.close()
-        conn.close()
-
-    return jsonify(rows), 200
+    return jsonify({
+        "message": "Pending-registration approval flow has been removed.",
+        "items": []
+    }), 200
 
 
 # ---------------------------------------------------------
@@ -264,62 +263,9 @@ def get_pending_registrations():
 @app.route("/pmsreports/admin/approve-registration/<int:pending_id>", methods=["POST"])
 @admin_required
 def approve_registration(pending_id):
-
-    conn = get_db_conn()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-    try:
-        # 1️⃣ Fetch pending registration
-        cur.execute("SELECT * FROM pending_registrations WHERE id=%s", (pending_id,))
-        pending = cur.fetchone()
-
-        if not pending:
-            return jsonify({"error": "Pending registration not found"}), 404
-
-        # 2️⃣ Create family with auto-name
-        family_name = f"{pending['email']}'s Family"
-        cur.execute("""
-            INSERT INTO families (family_name)
-            VALUES (%s)
-            RETURNING family_id
-        """, (family_name,))
-        family_id = cur.fetchone()["family_id"]
-
-        # 3️⃣ Create user
-        cur.execute("""
-            INSERT INTO users (email, phone, password_hash, family_id)
-            VALUES (%s, %s, %s, %s)
-            RETURNING user_id
-        """, (pending["email"], pending["phone"], pending["password_hash"], family_id))
-
-        new_user = cur.fetchone()
-        if not new_user:
-            conn.rollback()
-            return jsonify({"error": "User insert returned no data"}), 500
-
-        user_id = new_user["user_id"]
-
-        # 4️⃣ Assign role inside SAME transaction
-        assign_default_role(user_id, cur)
-
-        # 5️⃣ Delete pending request
-        cur.execute("DELETE FROM pending_registrations WHERE id=%s", (pending_id,))
-
-        conn.commit()
-
-        return jsonify({
-            "message": "User approved successfully",
-            "user_id": user_id,
-            "family_id": family_id
-        }), 201
-
-    except Exception as e:
-        conn.rollback()
-        return jsonify({"error": "Approval failed", "detail": str(e)}), 500
-
-    finally:
-        cur.close()
-        conn.close()
+    return jsonify({
+        "error": "Approval endpoint removed. Registration is now direct activation."
+    }), 410
 
 
 # ---------------------------------------------------------
@@ -328,21 +274,9 @@ def approve_registration(pending_id):
 @app.route("/pmsreports/admin/reject-registration/<int:pending_id>", methods=["DELETE"])
 @admin_required
 def reject_registration(pending_id):
-
-    conn = get_db_conn()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-
-    cur.execute("DELETE FROM pending_registrations WHERE id=%s RETURNING id", (pending_id,))
-    deleted = cur.fetchone()
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    if not deleted:
-        return jsonify({"error": "Pending registration not found"}), 404
-
-    return jsonify({"message": "Registration rejected"}), 200
+    return jsonify({
+        "error": "Reject endpoint removed. Registration is now direct activation."
+    }), 410
 
 
 # ---------------------------------------------------------
@@ -539,22 +473,7 @@ def check_email():
     conn = get_db_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # 1️⃣ Check pending registrations FIRST
-    cur.execute(
-        "SELECT 1 FROM pending_registrations WHERE LOWER(email) = %s LIMIT 1",
-        (email,)
-    )
-    exists_pending = cur.fetchone()
-
-    if exists_pending:
-        cur.close()
-        conn.close()
-        return jsonify({
-            "exists": True,
-            "pending": True
-        }), 200
-
-    # 2️⃣ Check real users
+    # Check users table only (registration is direct, no approval queue)
     cur.execute(
         "SELECT 1 FROM users WHERE LOWER(email) = %s LIMIT 1",
         (email,)
@@ -564,15 +483,8 @@ def check_email():
     cur.close()
     conn.close()
 
-    if exists_user:
-        return jsonify({
-            "exists": True,
-            "pending": False
-        }), 200
-
-    # 3️⃣ Not found anywhere
     return jsonify({
-        "exists": False
+        "exists": bool(exists_user)
     }), 200
 
 # ---------------------------------------------------------
@@ -589,19 +501,15 @@ def check_phone():
     conn = get_db_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # Check users table
+    # Check users table only (registration is direct, no approval queue)
     cur.execute("SELECT 1 FROM users WHERE phone = %s LIMIT 1", (phone,))
     exists_user = cur.fetchone()
-
-    # Check pending registrations
-    cur.execute("SELECT 1 FROM pending_registrations WHERE phone = %s LIMIT 1", (phone,))
-    exists_pending = cur.fetchone()
 
     cur.close()
     conn.close()
 
     return jsonify({
-        "exists": bool(exists_user or exists_pending)
+        "exists": bool(exists_user)
     }), 200
 
 # ---------- Logout ----------

@@ -13,7 +13,6 @@ import { ProfilePage } from './pages/ProfilePage'; // ✅ NEW IMPORT
 import { AdminProfilePage } from "./pages/AdminProfilePage";
 import { AdminPortfolioEditor } from "./pages/AdminPortfolioEditor";
 import { AdminUserDetail } from "./pages/AdminUserDetails";
-import AdminPendingRegistrations from "./pages/AdminPendingRegistrations";
 import PortfolioAudit from './pages/PortfolioAudit';
 
 /* -------------------------------------------------
@@ -137,13 +136,6 @@ function App() {
                 <AdminUserDetail />
               </ProtectedRoute>
             }
-          />
-          <Route
-            path="/admin/pending-registrations"
-            element={
-            <ProtectedRoute allowedRoles={["admin"]}>
-              <AdminPendingRegistrations />
-            </ProtectedRoute>}
           />
           {/* ---------- FALLBACK ---------- */}
           <Route path="/" element={<Navigate to="/login" replace />} />

@@ -22,12 +22,12 @@ export const AdminProfilePage = () => {
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 🚫 Non-admins cannot view this page
-  if (user?.role !== "admin") {
-    return <Navigate to="/profile" replace />;
-  }
-
   useEffect(() => {
+    if (user?.role !== 'admin') {
+      setLoading(false);
+      return;
+    }
+
     const loadRequests = async () => {
       try {
         const res = await fetch(`${API_BASE}/admin/service-requests`, {
@@ -48,7 +48,12 @@ export const AdminProfilePage = () => {
     };
 
     loadRequests();
-  }, []);
+  }, [user?.role]);
+
+  // 🚫 Non-admins cannot view this page
+  if (user?.role !== "admin") {
+    return <Navigate to="/pmsreports/profile" replace />;
+  }
 
   // ---- Counts ----
   const total = requests.length;
@@ -59,13 +64,13 @@ export const AdminProfilePage = () => {
 
   return (
     <Layout>
-      <div className="p-8">
-        <h1 className="text-2xl font-semibold mb-6">Admin Dashboard</h1>
+      <div className="space-y-8">
+        <h1 className="app-title">Admin Overview</h1>
 
         {/* ADMIN INFO */}
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
-          <p className="text-lg font-medium text-gray-800 mb-2">{user?.email}</p>
-          <p className="text-gray-600">Welcome, Admin.</p>
+        <div className="app-panel p-6">
+          <p className="text-lg font-medium text-slate-800 mb-2">{user?.email}</p>
+          <p className="text-slate-600">Administrative service queue and status summary.</p>
         </div>
 
         {/* SUMMARY CARDS */}
@@ -75,42 +80,42 @@ export const AdminProfilePage = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-10">
-            <motion.div whileHover={{ scale: 1.05 }} className="bg-white p-5 rounded-xl shadow flex items-center gap-3">
-              <ClipboardList size={32} className="text-blue-600" />
+            <motion.div whileHover={{ scale: 1.05 }} className="app-panel-soft p-5 flex items-center gap-3">
+              <ClipboardList size={32} className="text-cyan-700" />
               <div>
-                <p className="text-gray-600 text-sm">Total Requests</p>
+                <p className="text-slate-600 text-sm">Total Requests</p>
                 <p className="text-xl font-semibold">{total}</p>
               </div>
             </motion.div>
 
-            <motion.div whileHover={{ scale: 1.05 }} className="bg-white p-5 rounded-xl shadow flex items-center gap-3">
+            <motion.div whileHover={{ scale: 1.05 }} className="app-panel-soft p-5 flex items-center gap-3">
               <Clock size={32} className="text-yellow-500" />
               <div>
-                <p className="text-gray-600 text-sm">Pending</p>
+                <p className="text-slate-600 text-sm">Pending</p>
                 <p className="text-xl font-semibold">{pending}</p>
               </div>
             </motion.div>
 
-            <motion.div whileHover={{ scale: 1.05 }} className="bg-white p-5 rounded-xl shadow flex items-center gap-3">
+            <motion.div whileHover={{ scale: 1.05 }} className="app-panel-soft p-5 flex items-center gap-3">
               <Loader2 size={32} className="text-purple-500" />
               <div>
-                <p className="text-gray-600 text-sm">Processing</p>
+                <p className="text-slate-600 text-sm">Processing</p>
                 <p className="text-xl font-semibold">{processing}</p>
               </div>
             </motion.div>
 
-            <motion.div whileHover={{ scale: 1.05 }} className="bg-white p-5 rounded-xl shadow flex items-center gap-3">
+            <motion.div whileHover={{ scale: 1.05 }} className="app-panel-soft p-5 flex items-center gap-3">
               <CheckCircle size={32} className="text-green-600" />
               <div>
-                <p className="text-gray-600 text-sm">Completed</p>
+                <p className="text-slate-600 text-sm">Completed</p>
                 <p className="text-xl font-semibold">{completed}</p>
               </div>
             </motion.div>
 
-            <motion.div whileHover={{ scale: 1.05 }} className="bg-white p-5 rounded-xl shadow flex items-center gap-3">
+            <motion.div whileHover={{ scale: 1.05 }} className="app-panel-soft p-5 flex items-center gap-3">
               <XCircle size={32} className="text-red-500" />
               <div>
-                <p className="text-gray-600 text-sm">Rejected</p>
+                <p className="text-slate-600 text-sm">Rejected</p>
                 <p className="text-xl font-semibold">{rejected}</p>
               </div>
             </motion.div>
@@ -118,7 +123,7 @@ export const AdminProfilePage = () => {
         )}
 
         {/* LIST OF REQUESTS */}
-        <div className="bg-white rounded-xl shadow p-6">
+        <div className="app-panel p-6">
           <h2 className="text-lg font-semibold mb-4">All Service Requests</h2>
 
           {requests.length === 0 ? (

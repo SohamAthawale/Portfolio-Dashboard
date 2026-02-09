@@ -157,16 +157,16 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.3 }}
-      className="bg-white rounded-xl shadow-lg p-8 max-w-2xl mx-auto"
+      className="app-panel p-6 sm:p-8 max-w-3xl mx-auto"
     >
       <div className="text-center mb-8">
-        <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
-          <Upload className="text-blue-600" size={32} />
+        <div className="inline-flex items-center justify-center w-16 h-16 bg-cyan-50 border border-cyan-100 rounded-2xl mb-4">
+          <Upload className="text-cyan-700" size={32} />
         </div>
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">
+        <h2 className="text-2xl font-bold text-slate-900 mb-2">
           Upload ECAS Statements
         </h2>
-        <p className="text-gray-600">
+        <p className="text-slate-500">
           Upload one or multiple PDF statements together
         </p>
       </div>
@@ -177,7 +177,7 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
         =============================== */}
         {members.length > 0 && (
           <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-800 mb-3">
+            <label className="block text-sm font-semibold text-slate-700 mb-3">
               Upload For
             </label>
 
@@ -185,10 +185,10 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
               <button
                 type="button"
                 onClick={() => setSelectedMember(null)}
-                className={`p-3 border rounded-xl text-sm ${
+                className={`p-3 border rounded-xl text-sm transition ${
                   selectedMember === null
-                    ? 'border-blue-500 bg-blue-50 text-blue-600'
-                    : 'border-gray-300'
+                    ? 'border-cyan-400 bg-cyan-50 text-cyan-700'
+                    : 'border-slate-200 text-slate-700 bg-white'
                 }`}
               >
                 <Users className="mx-auto mb-1" size={18} />
@@ -200,10 +200,10 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
                   key={m.member_id}
                   type="button"
                   onClick={() => setSelectedMember(m.member_id)}
-                  className={`p-3 border rounded-xl text-sm ${
+                  className={`p-3 border rounded-xl text-sm transition ${
                     selectedMember === m.member_id
-                      ? 'border-blue-500 bg-blue-50 text-blue-600'
-                      : 'border-gray-300'
+                      ? 'border-cyan-400 bg-cyan-50 text-cyan-700'
+                      : 'border-slate-200 text-slate-700 bg-white'
                   }`}
                 >
                   <Users className="mx-auto mb-1" size={18} />
@@ -218,16 +218,16 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
            Upload Items
         =============================== */}
         {uploads.map((u, index) => (
-          <div key={u.id} className="mb-6 border rounded-xl p-4 bg-gray-50">
+          <div key={u.id} className="mb-6 app-panel-soft p-4">
             <div className="flex justify-between items-center mb-3">
-              <span className="font-medium text-gray-800">
+              <span className="font-semibold text-slate-800">
                 Statement {index + 1}
               </span>
               {uploads.length > 1 && (
                 <button
                   type="button"
                   onClick={() => removeUploadRow(u.id)}
-                  className="text-red-500"
+                  className="text-rose-500"
                 >
                   <Trash2 size={16} />
                 </button>
@@ -240,7 +240,7 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
                 updateUpload(u.id, 'fileType', e.target.value)
               }
               required
-              className="w-full mb-3 border rounded-lg px-3 py-2"
+              className="app-select mb-3"
             >
               <option value="">Select statement type</option>
               <option value="ecas_nsdl">ECAS-NSDL</option>
@@ -254,11 +254,11 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
               onChange={(e) =>
                 updateUpload(u.id, 'file', e.target.files?.[0] || null)
               }
-              className="block w-full text-sm"
+              className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-slate-800"
             />
 
             <div className="relative mt-3">
-              <Lock size={16} className="absolute left-3 top-3 text-gray-400" />
+              <Lock size={16} className="absolute left-3 top-3 text-slate-400" />
               <input
                 type="password"
                 placeholder="PDF password (if any)"
@@ -266,7 +266,7 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
                 onChange={(e) =>
                   updateUpload(u.id, 'password', e.target.value)
                 }
-                className="w-full pl-9 border rounded-lg px-3 py-2 text-sm"
+                className="app-input pl-9 text-sm"
               />
             </div>
           </div>
@@ -275,7 +275,7 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
         <button
           type="button"
           onClick={addUploadRow}
-          className="w-full mb-4 border border-dashed border-blue-400 text-blue-600 py-2 rounded-lg flex items-center justify-center gap-2"
+          className="w-full mb-4 border border-dashed border-cyan-300 text-cyan-700 py-2.5 rounded-xl flex items-center justify-center gap-2 font-semibold hover:bg-cyan-50 transition"
         >
           <Plus size={16} /> Add another statement
         </button>
@@ -283,21 +283,21 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
         {/* Progress */}
         {isUploading && (
           <div className="mb-4">
-            <div className="flex justify-between text-sm mb-1">
+            <div className="flex justify-between text-sm mb-1 text-slate-600">
               <span>Uploading...</span>
               <span>{uploadProgress}%</span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-slate-200 rounded-full h-2">
               <motion.div
                 animate={{ width: `${uploadProgress}%` }}
-                className="bg-blue-600 h-2 rounded-full"
+                className="bg-gradient-to-r from-cyan-500 to-blue-600 h-2 rounded-full"
               />
             </div>
           </div>
         )}
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm">
             {error}
           </div>
         )}
@@ -308,7 +308,7 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onSuccess }) => {
             isUploading ||
             uploads.some((u) => !u.file || !u.fileType)
           }
-          className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium disabled:opacity-50"
+          className="btn-primary w-full"
         >
           {isUploading ? 'Uploading...' : 'Upload Statements'}
         </button>

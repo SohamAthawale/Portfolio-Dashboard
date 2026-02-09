@@ -14,20 +14,13 @@ interface HistoryItem {
   members?: string[];
 }
 
-interface MemberPortfolioData {
-  label: string;
-  member_id: number | null;
-  summary: { total: number; equity: number; mf: number };
-  holdings: { company: string; isin: string; value: number; category: string }[];
-}
-
 const API_BASE = import.meta.env.VITE_API_URL || '/pmsreports';
 
 export const History = () => {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [memberPortfolios, setMemberPortfolios] = useState<MemberPortfolioData[]>([]);
+  const [memberPortfolios, setMemberPortfolios] = useState<any[]>([]);
   const [isSnapshotOpen, setIsSnapshotOpen] = useState(false);
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<number | null>(null);
   const navigate = useNavigate();
@@ -90,7 +83,7 @@ export const History = () => {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-600"></div>
         </div>
       </Layout>
     );
@@ -98,7 +91,7 @@ export const History = () => {
   if (error)
     return (
       <Layout>
-        <div className="text-center text-red-600 mt-16 font-medium">{error}</div>
+        <div className="text-center text-rose-600 mt-16 font-medium">{error}</div>
       </Layout>
     );
 
@@ -112,10 +105,10 @@ export const History = () => {
         {/* Page Header */}
         <div className="flex items-center justify-between flex-wrap gap-3 mb-8">
           <div>
-            <Logo className="w-40 mb-4 h-auto" />
-            <h1 className="text-3xl font-bold text-gray-800">Portfolio History</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              View, analyze, or delete previous uploads
+            <Logo className="mb-3" />
+            <h1 className="app-title">Portfolio History</h1>
+            <p className="app-subtitle mt-1">
+              View, analyze, compare or delete your previous statement imports.
             </p>
           </div>
         </div>
@@ -133,15 +126,15 @@ export const History = () => {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.05 }}
-                className="bg-white rounded-2xl shadow p-6 hover:shadow-lg transition-all flex flex-col justify-between"
+                className="app-panel p-6 hover:shadow-2xl transition-all flex flex-col justify-between"
               >
                 <div className="space-y-3">
                   {/* Upload Date */}
-                  <div className="flex items-center gap-2 text-gray-500">
-                    <Calendar className="text-blue-500" size={18} />
+                  <div className="flex items-center gap-2 text-slate-500">
+                    <Calendar className="text-cyan-600" size={18} />
                     <span className="text-sm font-medium">Uploaded on</span>
                   </div>
-                  <p className="text-lg font-semibold text-gray-800">
+                  <p className="text-lg font-semibold text-slate-800">
                     {new Date(item.upload_date).toLocaleDateString('en-IN', {
                       day: 'numeric',
                       month: 'short',
@@ -150,11 +143,11 @@ export const History = () => {
                   </p>
 
                   {/* Total Value */}
-                  <div className="flex items-center gap-2 text-gray-500 mt-4">
-                    <TrendingUp className="text-green-500" size={18} />
+                  <div className="flex items-center gap-2 text-slate-500 mt-4">
+                    <TrendingUp className="text-emerald-600" size={18} />
                     <span className="text-sm font-medium">Total Value</span>
                   </div>
-                  <p className="text-2xl font-bold text-gray-900">
+                  <p className="text-2xl font-bold text-slate-900">
                     ₹{item.total_value.toLocaleString('en-IN', {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
@@ -163,11 +156,11 @@ export const History = () => {
 
                   {/* Members */}
                   {item.members?.length ? (
-                    <div className="flex items-start gap-2 text-gray-600 text-sm mt-4">
-                      <Users size={16} className="text-purple-500 mt-[2px]" />
+                    <div className="flex items-start gap-2 text-slate-600 text-sm mt-4">
+                      <Users size={16} className="text-indigo-500 mt-[2px]" />
                       <span>
                         {item.member_count} Member{item.member_count! > 1 ? 's' : ''}:{' '}
-                        <span className="font-medium text-gray-800">
+                        <span className="font-medium text-slate-800">
                           {item.members.join(', ')}
                         </span>
                       </span>
@@ -179,14 +172,14 @@ export const History = () => {
                 <div className="flex gap-2 mt-6">
                   <button
                     onClick={() => handleViewSnapshot(item.portfolio_id)}
-                    className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white font-medium py-2 rounded-lg hover:bg-blue-700 active:scale-95 transition-all"
+                    className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-medium py-2 hover:from-cyan-600 hover:to-blue-700 active:scale-95 transition-all"
                   >
                     <Eye size={18} /> View
                   </button>
 
                   <button
                     onClick={() => handleDelete(item.portfolio_id)}
-                    className="flex-1 flex items-center justify-center gap-2 bg-red-600 text-white font-medium py-2 rounded-lg hover:bg-red-700 active:scale-95 transition-all"
+                    className="flex-1 flex items-center justify-center gap-2 bg-rose-600 text-white font-medium py-2 rounded-xl hover:bg-rose-700 active:scale-95 transition-all"
                   >
                     <Trash2 size={18} /> Delete
                   </button>

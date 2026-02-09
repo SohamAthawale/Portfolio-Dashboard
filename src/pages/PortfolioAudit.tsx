@@ -114,7 +114,7 @@ export default function PortfolioAudit() {
   if (loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center h-64 text-gray-600">
+        <div className="flex items-center justify-center h-64 text-slate-600">
           Loading portfolio audit…
         </div>
       </Layout>
@@ -124,7 +124,7 @@ export default function PortfolioAudit() {
   if (error) {
     return (
       <Layout>
-        <div className="p-6 bg-red-50 border border-red-200 rounded-lg text-red-700">
+        <div className="p-6 bg-rose-50 border border-rose-200 rounded-xl text-rose-700">
           {error}
         </div>
       </Layout>
@@ -140,22 +140,22 @@ export default function PortfolioAudit() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
-        className="max-w-7xl mx-auto p-6"
+        className="max-w-7xl mx-auto p-2 sm:p-4 space-y-8"
       >
-        <h1 className="text-3xl font-bold text-gray-800 mb-8">
+        <h1 className="app-title">
           Portfolio Audit – ID {portfolio_id}
         </h1>
 
         {/* ===============================
            FINAL HOLDINGS
         =============================== */}
-        <div className="bg-white shadow rounded-xl mb-10 overflow-x-auto">
-          <h2 className="px-6 py-4 border-b font-semibold text-gray-800">
+        <div className="app-panel overflow-x-auto">
+          <h2 className="px-6 py-4 border-b border-slate-200 font-semibold text-slate-800">
             Final Portfolio Holdings
           </h2>
 
           <table className="min-w-full text-sm">
-            <thead className="bg-gray-50 text-gray-600">
+            <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="px-4 py-2 text-left">Fund</th>
                 <th className="px-4 py-2">ISIN</th>
@@ -167,7 +167,7 @@ export default function PortfolioAudit() {
             </thead>
             <tbody>
               {entries.map((e, i) => (
-                <tr key={i} className="border-t">
+                <tr key={i} className="border-t border-slate-100">
                   <td className="px-4 py-2">{e.fund_name}</td>
                   <td className="px-4 py-2">{e.isin_no || '—'}</td>
                   <td className="px-4 py-2 text-right">{e.units}</td>
@@ -185,19 +185,19 @@ export default function PortfolioAudit() {
         {/* ===============================
            DUPLICATE SUMMARY
         =============================== */}
-        <div className="bg-white shadow rounded-xl mb-10 overflow-x-auto">
-          <h2 className="px-6 py-4 border-b font-semibold text-gray-800 flex items-center gap-2">
+        <div className="app-panel overflow-x-auto">
+          <h2 className="px-6 py-4 border-b border-slate-200 font-semibold text-slate-800 flex items-center gap-2">
             <AlertTriangle className="text-yellow-500" size={18} />
             Duplicate Summary
           </h2>
 
           {dupSummary.length === 0 ? (
-            <div className="p-6 text-gray-600">
+            <div className="p-6 text-slate-600">
               No duplicates found across uploaded files 🎉
             </div>
           ) : (
             <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 text-gray-600">
+              <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="px-4 py-2 text-left">ISIN</th>
                   <th className="px-4 py-2 text-left">Fund</th>
@@ -207,7 +207,7 @@ export default function PortfolioAudit() {
               </thead>
               <tbody>
                 {dupSummary.map((d, i) => (
-                  <tr key={i} className="border-t">
+                  <tr key={i} className="border-t border-slate-100">
                     <td className="px-4 py-2">{d.isin_no || '—'}</td>
                     <td className="px-4 py-2">{d.fund_name}</td>
                     <td className="px-4 py-2 text-center font-semibold">
@@ -225,13 +225,13 @@ export default function PortfolioAudit() {
            DUPLICATE DETAIL + ACTIONS
         =============================== */}
         {dupDetails.length > 0 && (
-          <div className="bg-white shadow rounded-xl overflow-x-auto">
-            <h2 className="px-6 py-4 border-b font-semibold text-gray-800">
+          <div className="app-panel overflow-x-auto">
+            <h2 className="px-6 py-4 border-b border-slate-200 font-semibold text-slate-800">
               Duplicate Detail (Audit Trail)
             </h2>
 
             <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 text-gray-600">
+              <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="px-4 py-2 text-left">ISIN</th>
                   <th className="px-4 py-2 text-left">Fund</th>
@@ -245,7 +245,7 @@ export default function PortfolioAudit() {
               </thead>
               <tbody>
                 {dupDetails.map((d) => (
-                  <tr key={d.id} className="border-t">
+                  <tr key={d.id} className="border-t border-slate-100">
                     <td className="px-4 py-2">{d.isin_no || '—'}</td>
                     <td className="px-4 py-2">{d.fund_name}</td>
                     <td className="px-4 py-2 text-right">{d.units}</td>
@@ -259,14 +259,14 @@ export default function PortfolioAudit() {
                       {!d.linked_portfolio_entry_id ? (
                         <button
                           onClick={() => acceptDuplicate(d.id)}
-                          className="text-green-600 hover:underline flex items-center gap-1"
+                          className="text-emerald-600 hover:underline flex items-center gap-1"
                         >
                           <PlusCircle size={16} /> Add
                         </button>
                       ) : (
                         <button
                           onClick={() => removeDuplicate(d.id)}
-                          className="text-red-600 hover:underline flex items-center gap-1"
+                          className="text-rose-600 hover:underline flex items-center gap-1"
                         >
                           <Trash2 size={16} /> Remove
                         </button>

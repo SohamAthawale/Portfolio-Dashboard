@@ -173,16 +173,16 @@ export const AdminServiceRequests: React.FC = () => {
 
   return (
     <Layout>
-      <div className="p-8">
-        <Logo className="w-44 mb-6 h-auto" />
-        <h1 className="text-3xl font-bold mb-6">Admin - Service Requests</h1>
+      <div className="space-y-6">
+        <Logo className="w-48" compact />
+        <h1 className="app-title">Admin Service Queue</h1>
 
         <div className="mb-4">
           <textarea
             value={globalAdminNote}
             onChange={(e) => setGlobalAdminNote(e.target.value)}
             placeholder="Global admin note (applies to next action if used)"
-            className="w-full border rounded p-2"
+            className="app-input"
           />
         </div>
 
@@ -229,7 +229,7 @@ const RequestCard: React.FC<{
   const [editingNote, setEditingNote] = useState<boolean>(false);
 
   return (
-    <motion.div whileHover={{ scale: 1.01 }} className="bg-white rounded-xl p-6 shadow flex flex-col md:flex-row md:justify-between gap-4">
+    <motion.div whileHover={{ scale: 1.01 }} className="app-panel p-6 flex flex-col md:flex-row md:justify-between gap-4">
       <div className="flex-1">
         <div className="flex items-center gap-3 mb-2">
           <ClipboardList size={20} className="text-indigo-600" />
@@ -267,7 +267,7 @@ const RequestCard: React.FC<{
               {req.request_type === "Portfolio Update" ? "Open Editor" : "Perform"}
             </button>
 
-            <button onClick={() => onUpdateStatus("processing", localNote || globalAdminNote || null)} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Mark Processing</button>
+            <button onClick={() => onUpdateStatus("processing", localNote || globalAdminNote || null)} className="px-4 py-2 bg-cyan-600 text-white rounded hover:bg-cyan-700">Mark Processing</button>
 
             <button onClick={() => onUpdateStatus("completed", localNote || globalAdminNote || null)} className="px-4 py-2 bg-green-700 text-white rounded hover:bg-green-800">Mark Completed</button>
 

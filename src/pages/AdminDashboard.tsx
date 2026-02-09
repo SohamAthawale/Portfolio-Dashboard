@@ -150,14 +150,14 @@ export const AdminDashboard: React.FC = () => {
   return (
     <Layout>
       <motion.div
-        className="p-4 sm:p-8 space-y-8"
+        className="space-y-8"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
       >
         {/* HEADER */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3 sm:gap-4">
-            <Logo className="w-32 sm:w-44 h-auto" />
+            <Logo className="w-44" compact />
             <h1 className="text-2xl sm:text-3xl font-bold">Admin Dashboard</h1>
           </div>
 
@@ -186,7 +186,7 @@ export const AdminDashboard: React.FC = () => {
         {/* CHARTS */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Monthly Requests */}
-          <div className="bg-white p-4 sm:p-6 rounded-2xl shadow h-[360px] sm:h-[380px]">
+          <div className="app-panel p-4 sm:p-6 h-[360px] sm:h-[380px]">
             <h2 className="text-lg sm:text-xl font-semibold mb-4">
               Monthly Service Requests
             </h2>
@@ -202,7 +202,7 @@ export const AdminDashboard: React.FC = () => {
           </div>
 
           {/* Request Status */}
-          <div className="bg-white p-4 sm:p-6 rounded-2xl shadow h-[360px] sm:h-[380px]">
+          <div className="app-panel p-4 sm:p-6 h-[360px] sm:h-[380px]">
             <h2 className="text-lg sm:text-xl font-semibold mb-4">
               Service Request Status
             </h2>
@@ -229,7 +229,7 @@ export const AdminDashboard: React.FC = () => {
           </div>
 
           {/* Top Users */}
-          <div className="bg-white p-4 sm:p-6 rounded-2xl shadow h-[360px] sm:h-[380px]">
+          <div className="app-panel p-4 sm:p-6 h-[360px] sm:h-[380px]">
             <h2 className="text-lg sm:text-xl font-semibold mb-4">
               Top Users by Portfolios
             </h2>
@@ -246,7 +246,7 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         {/* USERS TABLE */}
-        <div className="bg-white p-4 sm:p-6 rounded-2xl shadow">
+        <div className="app-panel p-4 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg sm:text-xl font-semibold">Users</h2>
             <div className="text-xs sm:text-sm text-gray-500">{users.length} rows</div>
@@ -255,7 +255,7 @@ export const AdminDashboard: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-xs sm:text-sm">
               <thead>
-                <tr className="text-gray-600 border-b">
+                  <tr className="text-slate-600 border-b border-slate-200">
                   <th className="py-2 px-3">User ID</th>
                   <th className="py-2 px-3">Email</th>
                   <th className="py-2 px-3">Phone</th>
@@ -266,7 +266,7 @@ export const AdminDashboard: React.FC = () => {
 
               <tbody>
                 {users.map((u) => (
-                  <tr key={u.user_id} className="border-b hover:bg-gray-50">
+                  <tr key={u.user_id} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="py-2 px-3">{u.user_id}</td>
                     <td className="py-2 px-3 break-all">{u.email}</td>
                     <td className="py-2 px-3">{u.phone ?? "—"}</td>
@@ -276,7 +276,7 @@ export const AdminDashboard: React.FC = () => {
                     <td className="py-2 px-3">
                       <Link
                         to={`/admin/user/${u.user_id}`}
-                        className="text-indigo-600 hover:underline text-xs sm:text-sm"
+                        className="text-cyan-700 hover:underline text-xs sm:text-sm"
                       >
                         View
                       </Link>
@@ -312,7 +312,7 @@ const StatCard: React.FC<StatCardProps> = ({ title, value }) => {
   return (
     <div
       className="
-        p-4 sm:p-5 rounded-xl shadow-md bg-white 
+        p-4 sm:p-5 rounded-2xl shadow-md bg-white/80 border border-white/70 backdrop-blur
         flex flex-col justify-center 
         min-w-[120px]   /* prevents shrinking too much */
         max-w-full

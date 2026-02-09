@@ -6,8 +6,10 @@ import {
   History,
   LogOut,
   ClipboardList,
+  MessageSquareMore,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import Logo from './logo';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/pmsreports';
 
@@ -47,7 +49,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
 
   const handleLogout = async () => {
     try {
-      await fetch('http://127.0.0.1:5000/logout', {
+      await fetch(`${API_BASE}/logout`, {
         method: 'POST',
         credentials: 'include',
       });
@@ -62,18 +64,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/upload', label: 'Upload', icon: UploadIcon },
     { path: '/history', label: 'History', icon: History },
+    { path: '/service-requests', label: 'Requests', icon: MessageSquareMore },
   ];
 
   const adminNavItems = [
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     {
       path: '/admin/service-requests',
-      label: 'Service Requests',
-      icon: ClipboardList,
-    },
-    {
-      path: '/admin/pending-registrations',
-      label: 'Pending Registrations',
+      label: 'Requests',
       icon: ClipboardList,
     },
   ];
@@ -85,7 +83,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
   ====================================================== */
   if (isMobile) {
     return (
-      <div className="flex justify-around items-center py-2 bg-white border-t shadow-md">
+      <div className="flex justify-around items-center py-2 bg-white/90 border-t border-slate-200 backdrop-blur-md shadow-lg">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = location.pathname.startsWith(item.path);
@@ -95,7 +93,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
               key={item.path}
               to={item.path}
               className={`flex flex-col items-center text-xs ${
-                isActive ? 'text-blue-600' : 'text-gray-600'
+                isActive ? 'text-cyan-700' : 'text-slate-600'
               }`}
             >
               <Icon size={22} />
@@ -108,7 +106,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
         {!loadingPortfolio && latestPortfolioId && (
           <Link
             to={`/portfolio-audit/${latestPortfolioId}`}
-            className="flex flex-col items-center text-xs text-gray-600"
+            className="flex flex-col items-center text-xs text-slate-600"
           >
             <ClipboardList size={22} />
             <span className="text-[10px]">Audit</span>
@@ -117,7 +115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
 
         <button
           onClick={handleLogout}
-          className="flex flex-col items-center text-xs text-gray-600"
+          className="flex flex-col items-center text-xs text-slate-600"
         >
           <LogOut size={22} />
           <span className="text-[10px]">Logout</span>
@@ -130,19 +128,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
      DESKTOP SIDEBAR
   ====================================================== */
   return (
-    <aside className="w-64 bg-white border-r border-gray-200 min-h-screen fixed left-0 top-0 z-10">
-      <div className="p-6 border-b border-gray-100">
-        <h1 className="text-xl mt-3 font-bold text-gray-800">
-          Portfolio Management
-        </h1>
+    <aside className="w-72 bg-white/70 backdrop-blur-xl border-r border-white/60 min-h-screen fixed left-0 top-0 z-20 shadow-xl">
+      <div className="p-6 border-b border-slate-200/70 space-y-4">
+        <Logo className="w-full" />
         {user && (
-          <p className="text-sm text-gray-500 mt-1">
-            {user.role === 'admin' ? 'Administrator' : 'User'}
-          </p>
+          <div className="inline-flex items-center rounded-full bg-cyan-50 px-3 py-1 text-xs font-semibold tracking-wide text-cyan-800 border border-cyan-100">
+            {user.role === 'admin' ? 'Admin Console' : 'Member Workspace'}
+          </div>
         )}
       </div>
 
-      <nav className="px-3 mt-4 space-y-1">
+      <nav className="px-4 mt-5 space-y-2">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = location.pathname.startsWith(item.path);
@@ -151,10 +147,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
             <Link
               key={item.path}
               to={item.path}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
                 isActive
-                  ? 'bg-blue-50 text-blue-600 font-semibold'
-                  : 'text-gray-600 hover:bg-gray-50'
+                  ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold shadow-md'
+                  : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
               <Icon size={20} />
@@ -164,9 +160,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
         })}
 
         {/* Portfolio Audit */}
-        <div className="mt-4">
+        <div className="mt-5 rounded-xl border border-slate-200/70 bg-white/70 p-2">
           {loadingPortfolio ? (
-            <div className="px-4 py-3 text-gray-400">
+            <div className="px-4 py-3 text-slate-400">
               Loading audit…
             </div>
           ) : latestPortfolioId ? (
@@ -174,26 +170,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
               to={`/portfolio-audit/${latestPortfolioId}`}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
                 location.pathname.startsWith('/portfolio-audit')
-                  ? 'bg-blue-50 text-blue-600 font-semibold'
-                  : 'text-gray-600 hover:bg-gray-50'
+                  ? 'bg-slate-900 text-white font-semibold'
+                  : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
               <ClipboardList size={20} />
-              <span>Portfolio Audit</span>
+              <span>Audit Workspace</span>
             </Link>
           ) : (
-            <div className="flex items-center gap-3 px-4 py-3 text-gray-400 cursor-not-allowed">
+            <div className="flex items-center gap-3 px-4 py-3 text-slate-400 cursor-not-allowed">
               <ClipboardList size={20} />
-              <span>Portfolio Audit</span>
+              <span>Audit Workspace</span>
             </div>
           )}
         </div>
       </nav>
 
-      <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-gray-100">
+      <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-200/70">
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 px-4 py-3 w-full text-gray-600 hover:bg-red-50 hover:text-red-600 rounded-lg transition-all"
+          className="flex items-center gap-3 px-4 py-3 w-full text-slate-600 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all border border-slate-200 bg-white"
         >
           <LogOut size={20} />
           <span>Logout</span>

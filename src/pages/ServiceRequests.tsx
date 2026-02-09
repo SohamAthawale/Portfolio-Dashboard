@@ -108,17 +108,18 @@ export const ServiceRequests = () => {
 
   return (
     <Layout>
-      <div className="p-6 space-y-6">
+      <div className="space-y-6">
         {/* PAGE TITLE */}
-        <h1 className="text-3xl font-bold text-gray-800">My Service Requests</h1>
+        <h1 className="app-title">Service Requests</h1>
+        <p className="app-subtitle">Submit profile or portfolio change requests and track updates from admins.</p>
 
         {/* CREATE NEW REQUEST */}
-        <div className="bg-white shadow rounded-xl p-6 space-y-4">
+        <div className="app-panel p-6 space-y-4">
           <h2 className="text-xl font-semibold">Create New Request</h2>
 
           {/* Member Selector */}
           <select
-            className="border p-2 rounded-md w-full"
+            className="app-select"
             value={memberId}
             onChange={(e) => setMemberId(e.target.value)}
           >
@@ -132,7 +133,7 @@ export const ServiceRequests = () => {
 
           {/* Request Type */}
           <select
-            className="border p-2 rounded-md w-full"
+            className="app-select"
             value={requestType}
             onChange={(e) => setRequestType(e.target.value)}
           >
@@ -145,7 +146,7 @@ export const ServiceRequests = () => {
 
           {/* Description */}
           <textarea
-            className="border p-2 rounded-md w-full"
+            className="app-input"
             rows={3}
             placeholder="Description (optional)"
             value={description}
@@ -155,7 +156,7 @@ export const ServiceRequests = () => {
           {/* Submit */}
           <button
             onClick={submitRequest}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg inline-flex items-center gap-2 hover:bg-blue-700"
+            className="btn-primary"
           >
             <Plus size={18} />
             Submit Request
@@ -163,18 +164,18 @@ export const ServiceRequests = () => {
         </div>
 
         {/* PREVIOUS REQUESTS */}
-        <div className="bg-white shadow rounded-xl p-6">
+        <div className="app-panel p-6">
           <h2 className="text-xl font-semibold mb-4">Previous Requests</h2>
 
           {loading ? (
-            <p className="text-gray-500">Loading...</p>
+            <p className="text-slate-500">Loading...</p>
           ) : requests.length === 0 ? (
-            <p className="text-gray-500">No service requests found.</p>
+            <p className="text-slate-500">No service requests found.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="border-b text-left">
+                  <tr className="border-b border-slate-200 text-left text-slate-600">
                     <th className="p-2 w-10">#</th>
                     <th className="p-2 w-36">Type</th>
                     <th className="p-2 w-64">Description</th>
@@ -188,7 +189,7 @@ export const ServiceRequests = () => {
 
                 <tbody>
                   {requests.map((req) => (
-                    <tr key={req.id} className="border-b">
+                    <tr key={req.id} className="border-b border-slate-100 hover:bg-slate-50">
                       <td className="p-2 align-top">{req.request_id ?? req.id}</td>
                       <td className="p-2 align-top">{req.request_type}</td>
 

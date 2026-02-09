@@ -69,22 +69,6 @@ interface DashboardData {
   top_category: { category: string; value: number }[];
   holdings: Holding[];
 }
-const getAMC = (_amc?: string, company?: string) => {
-  if (!company) return "OTHERS";
-
-  const upper = company.toUpperCase();
-  const known = [
-    "UTI", "JM", "BANDHAN", "HDFC", "ICICI", "SBI",
-    "AXIS", "KOTAK", "NIPPON", "DSP", "TATA", "IDFC",
-    "MIRAE", "MOTILAL", "PARAG", "EDELWEISS"
-  ];
-
-  for (const k of known) {
-    if (upper.includes(k)) return k;
-  }
-
-  return "OTHERS";
-};
 
 /* ---------- Component start ---------- */
 export const Dashboard: React.FC = () => {
@@ -383,38 +367,38 @@ mfCategoryTableData.sort((a, b) =>
     <Layout>
       <div
         id="dashboard-pdf"
-        className="w-full max-w-[380px] mx-auto p-2 sm:max-w-full sm:p-6 bg-white space-y-6 sm:space-y-8 text-gray-800"
+        className="w-full max-w-[380px] mx-auto p-2 sm:max-w-full sm:p-6 app-panel space-y-6 sm:space-y-8 text-slate-800"
       >
         {/* HEADER */}
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div className="flex items-center gap-3 sm:gap-4">
-            <Logo className="w-24 sm:w-40 h-auto" />
-            <div className="text-lg sm:text-xl font-semibold">Summary Report</div>
+            <Logo className="w-24 sm:w-52" compact={isMobile} />
+            <div className="text-lg sm:text-xl font-semibold">Live Portfolio Report</div>
           </div>
 
           <div className="text-sm text-right">
             <div>
-              <span className="font-medium">Customer:</span> {user?.email ?? "-"}
+              <span className="font-medium">Account:</span> {user?.email ?? '-'}
             </div>
-            <div className="text-xs text-gray-500">{new Date().toLocaleDateString("en-GB")}</div>
+            <div className="text-xs text-slate-500">{new Date().toLocaleDateString('en-GB')}</div>
           </div>
         </div>
 
-        <hr className="border-gray-300" />
+        <hr className="border-slate-200" />
 
         {/* BUTTON ROW */}
         <div className="flex flex-col sm:flex-row justify-between gap-3 px-1 sm:px-0">
           <div className="flex flex-col sm:flex-row gap-3">
             <button
               onClick={downloadPDF}
-              className="inline-flex items-center gap-2 px-3 py-2 border border-gray-400 text-sm rounded bg-white hover:bg-gray-50"
+              className="btn-secondary"
             >
               <Download size={14} /> Download PDF
             </button>
 
             <button
               onClick={() => navigate("/service-requests")}
-              className="inline-flex items-center gap-2 px-3 py-2 border border-gray-400 text-sm rounded bg-white hover:bg-gray-50"
+              className="btn-primary"
             >
               Raise Service Request
             </button>
@@ -424,7 +408,7 @@ mfCategoryTableData.sort((a, b) =>
           <div className="relative w-full sm:w-auto" ref={dropdownRef}>
             <button
               onClick={() => setDropdownOpen((prev) => !prev)}
-              className="w-full sm:w-auto inline-flex items-center justify-between gap-2 px-3 py-2 border border-gray-400 text-sm rounded bg-white"
+              className="w-full sm:w-auto inline-flex items-center justify-between gap-2 px-3 py-2 border border-slate-200 text-sm rounded-xl bg-white shadow-sm"
             >
               <Users size={14} />
               <span>{selectedText}</span>
@@ -432,13 +416,13 @@ mfCategoryTableData.sort((a, b) =>
             </button>
 
             {dropdownOpen && (
-              <div className="absolute w-full sm:w-64 mt-2 bg-white border border-gray-300 rounded shadow-sm z-50 max-h-64 overflow-y-auto">
+              <div className="absolute w-full sm:w-64 mt-2 bg-white border border-slate-200 rounded-xl shadow-sm z-50 max-h-64 overflow-y-auto">
                 <div className="p-3 space-y-2">
                   <label className="flex items-center gap-2 text-sm">
                     <input type="checkbox" checked={selectedIds.includes("user")} onChange={() => toggleSelection("user")} />
                     My Holdings
                   </label>
-                  <div className="border-t my-2" />
+                <div className="border-t border-slate-200 my-2" />
 
                   {familyMembers.map((m) => {
                     const id = m.id ?? m.member_id;
@@ -461,13 +445,13 @@ mfCategoryTableData.sort((a, b) =>
             const Icon = card.icon;
             return (
               <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                <div className="border border-gray-300 p-3 sm:p-4 rounded-lg flex items-center gap-3 sm:gap-4 min-h-[85px]">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 border border-gray-300 flex items-center justify-center rounded">
-                    <Icon size={18} className="text-gray-700" />
+                <div className="app-panel-soft p-3 sm:p-4 flex items-center gap-3 sm:gap-4 min-h-[92px]">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 border border-cyan-100 bg-cyan-50 flex items-center justify-center rounded-xl">
+                    <Icon size={18} className="text-cyan-700" />
                   </div>
 
                   <div>
-                    <div className="text-[10px] sm:text-xs text-gray-600">{card.title}</div>
+                    <div className="text-[10px] sm:text-xs text-slate-500">{card.title}</div>
                     <div className="text-base sm:text-xl font-semibold">
                       {card.title.includes("%") ? `${card.value.toFixed(2)}%` : `₹${Number(card.value).toLocaleString("en-IN")}`}
                     </div>
@@ -682,7 +666,7 @@ mfCategoryTableData.sort((a, b) =>
           </div>
         </div>
         {/* MF CATEGORY SUMMARY TABLE */}
-<div className="pt-4 border-t border-gray-200 overflow-x-auto">
+<div className="pt-4 border-t border-slate-200 overflow-x-auto">
   <h3 className="text-sm font-semibold mb-3">
     Mutual Fund Category-wise Breakdown
   </h3>
@@ -692,8 +676,8 @@ mfCategoryTableData.sort((a, b) =>
       No MF category data available
     </div>
   ) : (
-    <table className="min-w-full border border-gray-300 text-sm">
-      <thead className="bg-gray-100">
+    <table className="min-w-full border border-slate-200 text-sm">
+      <thead className="bg-slate-50">
         <tr>
           <th className="border px-3 py-2 text-left">Mutual Fund</th>
           <th className="border px-3 py-2 text-left">Category</th>
@@ -706,7 +690,7 @@ mfCategoryTableData.sort((a, b) =>
 
       <tbody>
         {mfCategoryTableData.map((row, i) => (
-          <tr key={i} className="hover:bg-gray-50">
+          <tr key={i} className="hover:bg-slate-50">
             <td className="border px-3 py-2 font-medium">
               {row.amc}
             </td>
@@ -724,7 +708,7 @@ mfCategoryTableData.sort((a, b) =>
             </td>
             <td
               className={`border px-3 py-2 text-right font-medium ${
-                row.return_pct >= 0 ? "text-green-600" : "text-red-600"
+                row.return_pct >= 0 ? 'text-emerald-600' : 'text-rose-600'
               }`}
             >
               {row.return_pct}%
@@ -737,7 +721,7 @@ mfCategoryTableData.sort((a, b) =>
 </div>
 
         {/* HOLDINGS TABLE */}
-        <div className="pt-4 border-t border-gray-200 overflow-x-auto">
+        <div className="pt-4 border-t border-slate-200 overflow-x-auto">
           {safeHoldings.length === 0 ? (
             <div className="text-center text-gray-500 py-6">No holdings available</div>
           ) : (

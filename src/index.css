@@ -1,25 +1,63 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* MOBILE DASHBOARD WIDTH FIX */
-@media (max-width: 640px) {
-  .dashboard-mobile-container {
-    max-width: 94%;    /* tighter width */
-    margin: 0 auto;    /* center it */
+@layer base {
+  :root {
+    color-scheme: light;
   }
 
-  .dashboard-mobile-section {
-    width: 100%;
-    padding: 0.25rem 0.35rem; /* reduce inner padding */
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: 'Manrope', 'Segoe UI', sans-serif;
+    color: #0f172a;
+    background: radial-gradient(circle at top left, #dbeafe 0%, #f8fafc 45%, #ecfeff 100%);
   }
 
-  .chart-mobile {
-    height: 260px !important; /* reduce height */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: 'Sora', 'Manrope', sans-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer components {
+  .app-panel {
+    @apply rounded-2xl border border-white/70 bg-white/75 shadow-xl backdrop-blur-xl;
   }
 
-  .pie-mobile {
-    width: 90% !important;
-    margin: 0 auto;
+  .app-panel-soft {
+    @apply rounded-2xl border border-slate-200/70 bg-white/70 shadow-sm backdrop-blur;
+  }
+
+  .app-title {
+    @apply text-2xl sm:text-3xl font-bold text-slate-900;
+  }
+
+  .app-subtitle {
+    @apply text-sm text-slate-500;
+  }
+
+  .app-input {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-700 shadow-sm outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100;
+  }
+
+  .app-select {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-700 shadow-sm outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:from-cyan-600 hover:to-blue-700 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-cyan-300 hover:bg-cyan-50;
   }
 }

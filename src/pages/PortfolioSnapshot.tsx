@@ -189,18 +189,18 @@ export const PortfolioSnapshot = ({
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-2"
+      className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 px-2"
     >
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ duration: 0.25 }}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-[340px] sm:max-w-7xl h-[92vh] overflow-y-auto relative p-3 sm:p-6"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-[340px] sm:max-w-7xl h-[92vh] overflow-y-auto relative p-3 sm:p-6 border border-white/60"
       >
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-3 right-3 text-xl text-gray-700 hover:text-black"
+          className="absolute top-3 right-3 text-xl text-slate-700 hover:text-black"
         >
           ✕
         </button>
@@ -208,7 +208,7 @@ export const PortfolioSnapshot = ({
         {/* Download PDF Button */}
         <button
           onClick={downloadPdf}
-       className="absolute top-10 right-2 text-[10px] bg-gray-100 px-2 py-1 rounded-md text-gray-600 hover:text-black"
+       className="absolute top-10 right-2 text-[10px] bg-slate-100 px-2 py-1 rounded-md text-slate-600 hover:text-black"
 
         >
           Download PDF
@@ -217,11 +217,11 @@ export const PortfolioSnapshot = ({
         <div id="portfolio-snapshot-content" className="p-1 sm:p-2">
           <Logo className="w-32 sm:w-40 h-auto mb-4 mx-auto" />
 
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 text-center sm:text-left">
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-800 text-center sm:text-left">
             Portfolio #{portfolioId} Snapshot
           </h2>
 
-          <p className="text-gray-500 text-sm sm:text-base mb-6 text-center sm:text-left">
+          <p className="text-slate-500 text-sm sm:text-base mb-6 text-center sm:text-left">
             Historical portfolio breakdown with NAV, units, and analytics
           </p>
 
@@ -233,8 +233,8 @@ export const PortfolioSnapshot = ({
                 onClick={() => setSelectedIndex(idx)}
                 className={`px-3 py-2 rounded-lg text-xs sm:text-sm font-medium ${
                   selectedIndex === idx
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                 }`}
               >
                 {m.label}

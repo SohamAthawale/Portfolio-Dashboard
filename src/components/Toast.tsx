@@ -36,9 +36,9 @@ export const Toast: React.FC<ToastProps> = ({
   };
 
   const colors = {
-    success: 'bg-green-500',
-    error: 'bg-red-500',
-    info: 'bg-blue-500',
+    success: 'bg-emerald-500',
+    error: 'bg-rose-500',
+    info: 'bg-cyan-600',
   };
 
   return (
@@ -49,7 +49,7 @@ export const Toast: React.FC<ToastProps> = ({
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -50, scale: 0.95 }}
           transition={{ duration: 0.2 }}
-          className={`fixed top-20 right-6 ${colors[type]} text-white px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 z-50 max-w-md`}
+          className={`fixed top-24 right-6 ${colors[type]} text-white px-6 py-4 rounded-xl shadow-lg flex items-center gap-3 z-50 max-w-md`}
         >
           {icons[type]}
           <p className="flex-1 font-medium">{message}</p>

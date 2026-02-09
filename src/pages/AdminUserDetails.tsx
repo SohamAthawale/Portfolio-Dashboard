@@ -126,7 +126,7 @@ export const AdminUserDetail: React.FC = () => {
           >
             ← Back
           </button>
-          <h1 className="text-2xl font-bold">User #{numericUserId}</h1>
+          <h1 className="text-2xl font-bold">Member Profile #{numericUserId}</h1>
         </div>
 
         {/* SUMMARY – FULLY RESPONSIVE AUTO-FIT GRID */}
@@ -141,7 +141,7 @@ export const AdminUserDetail: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           
           {/* Asset Allocation */}
-          <div className="bg-white p-6 rounded-2xl shadow h-[420px]">
+          <div className="app-panel p-6 h-[420px]">
             <h2 className="text-xl font-semibold mb-4">Category / Asset Allocation</h2>
             <div className="w-full flex justify-center">
               <div className="w-full max-w-[360px] sm:max-w-[440px] h-[300px]">
@@ -189,7 +189,7 @@ export const AdminUserDetail: React.FC = () => {
           </div>
 
           {/* Monthly Uploads */}
-          <div className="bg-white p-6 rounded-2xl shadow h-[420px]">
+          <div className="app-panel p-6 h-[420px]">
             <h2 className="text-xl font-semibold mb-4">Monthly Uploads</h2>
             <ResponsiveContainer width="100%" height="85%">
               <BarChart data={monthly} margin={{ top: 20, right: 20, bottom: 40, left: 10 }}>
@@ -205,7 +205,7 @@ export const AdminUserDetail: React.FC = () => {
         </div>
 
         {/* FAMILY MEMBERS */}
-        <div className="bg-white p-6 rounded-2xl shadow">
+        <div className="app-panel p-6">
           <h2 className="text-xl font-semibold mb-4">Family Members</h2>
           {family.length === 0 ? (
             <p className="text-sm text-gray-500">No family members.</p>
@@ -213,14 +213,14 @@ export const AdminUserDetail: React.FC = () => {
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b text-gray-600">
+                  <tr className="border-b border-slate-200 text-slate-600">
                     <th className="py-2 px-3">Member ID</th>
                     <th className="py-2 px-3">Name</th>
                   </tr>
                 </thead>
                 <tbody>
                   {family.map((m) => (
-                    <tr key={m.member_id} className="border-b">
+                    <tr key={m.member_id} className="border-b border-slate-100">
                       <td className="py-2 px-3">{m.member_id}</td>
                       <td className="py-2 px-3">{m.name ?? "—"}</td>
                     </tr>
@@ -232,12 +232,12 @@ export const AdminUserDetail: React.FC = () => {
         </div>
 
         {/* HOLDINGS */}
-        <div className="bg-white p-6 rounded-2xl shadow">
+        <div className="app-panel p-6">
           <h2 className="text-xl font-semibold mb-4">All Holdings</h2>
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead>
-                <tr className="text-gray-600 border-b">
+                <tr className="text-slate-600 border-b border-slate-200">
                   <th className="py-2 px-3">Portfolio ID</th>
                   <th className="py-2 px-3">Fund</th>
                   <th className="py-2 px-3">ISIN</th>
@@ -251,7 +251,7 @@ export const AdminUserDetail: React.FC = () => {
               <tbody>
                 {holdings.length > 0 ? (
                   holdings.map((h, i) => (
-                    <tr key={i} className="border-b">
+                    <tr key={i} className="border-b border-slate-100">
                       <td className="py-2 px-3">{h.portfolio_id}</td>
                       <td className="py-2 px-3">{h.fund_name ?? "—"}</td>
                       <td className="py-2 px-3">{h.isin_no ?? "—"}</td>

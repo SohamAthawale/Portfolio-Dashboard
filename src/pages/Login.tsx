@@ -1,18 +1,14 @@
-import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
-import { motion } from "framer-motion";
-import Logo from "../components/logo";
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { ShieldCheck, Mail, Smartphone, Lock } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import Logo from '../components/logo';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/pmsreports';
 
-
-/* -------------------------
-   REGEX VALIDATION
-------------------------- */
 const SQL_INJECTION_REGEX =
   /('|--|;|\/\*|\*\/|\bUNION\b|\bSELECT\b|\bINSERT\b|\bUPDATE\b|\bDELETE\b|\bDROP\b|\bOR\b\s+1=1|\b1=1\b)/i;
-
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
 const PHONE_REGEX = /^\d{10}$/;
 
@@ -25,21 +21,18 @@ const PASSWORD_RULES = {
 };
 
 export const Login = () => {
-  /* UI MODE */
   const [isRegister, setIsRegister] = useState(false);
   const [otpStep, setOtpStep] = useState(false);
 
-  /* FORM FIELDS */
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState('');
   const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
-  const [emailPending, setEmailPending] = useState(false); // ⭐ NEW
 
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState('');
   const [phoneAvailable, setPhoneAvailable] = useState<boolean | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
 
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState('');
   const [passwordChecks, setPasswordChecks] = useState({
     minLen: false,
     lower: false,
@@ -47,137 +40,104 @@ export const Login = () => {
     number: false,
     special: false,
   });
-
-  const [otp, setOtp] = useState("");
-
-  /* STATUS */
-  const [message, setMessage] = useState("");
+  const [otp, setOtp] = useState('');
+  const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  /* HELPERS */
-  const navigate = useNavigate();
   const { finishOtpLogin } = useAuth();
+  const navigate = useNavigate();
 
   const emailAbortRef = useRef<AbortController | null>(null);
   const phoneAbortRef = useRef<AbortController | null>(null);
 
   const isSqlInjection = (value: string) => SQL_INJECTION_REGEX.test(value);
 
-  /* --------------------------------------------------------
-     LIVE EMAIL CHECK  (Signup mode only)
-  -------------------------------------------------------- */
   useEffect(() => {
     if (!isRegister) return;
 
     setEmailAvailable(null);
     setEmailError(null);
-    setEmailPending(false);
 
     if (!email) return;
-
     if (isSqlInjection(email)) {
-      setEmailError("Contains blocked characters");
+      setEmailError('Contains blocked characters');
       return;
     }
-
     if (!EMAIL_REGEX.test(email)) {
-      setEmailError("Invalid email format");
+      setEmailError('Invalid email format');
       return;
     }
 
     const timer = setTimeout(async () => {
       if (emailAbortRef.current) emailAbortRef.current.abort();
-
       const ac = new AbortController();
       emailAbortRef.current = ac;
 
       try {
         const res = await fetch(`${API_BASE}/check-email`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           signal: ac.signal,
           body: JSON.stringify({ email }),
         });
-
         const data = await res.json();
 
         if (!res.ok) {
-          setEmailError(data.error || "Error checking email");
+          setEmailError(data.error || 'Error checking email');
           setEmailAvailable(false);
-          setEmailPending(false);
-        } else {
-          if (data.pending === true) {
-            setEmailPending(true);
-            setEmailAvailable(false);
-          } else {
-            setEmailPending(false);
-            setEmailAvailable(!data.exists);
-          }
+          return;
         }
+        setEmailAvailable(!data.exists);
       } catch (err: any) {
-        if (err.name !== "AbortError") {
-          setEmailError("Network error");
-        }
+        if (err.name !== 'AbortError') setEmailError('Network error');
       }
-    }, 500);
+    }, 350);
 
     return () => clearTimeout(timer);
   }, [email, isRegister]);
 
-  /* --------------------------------------------------------
-     LIVE PHONE CHECK  (Signup mode only)
-  -------------------------------------------------------- */
   useEffect(() => {
     if (!isRegister) return;
-
     setPhoneAvailable(null);
     setPhoneError(null);
 
     if (!phone) return;
-
     if (!/^\d*$/.test(phone)) {
-      setPhoneError("Digits only");
+      setPhoneError('Digits only');
       return;
     }
-
     if (!PHONE_REGEX.test(phone)) {
-      setPhoneError("Phone must be 10 digits");
+      setPhoneError('Phone must be 10 digits');
       return;
     }
 
     const timer = setTimeout(async () => {
       if (phoneAbortRef.current) phoneAbortRef.current.abort();
-
       const ac = new AbortController();
       phoneAbortRef.current = ac;
 
       try {
         const res = await fetch(`${API_BASE}/check-phone`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           signal: ac.signal,
           body: JSON.stringify({ phone }),
         });
-
         const data = await res.json();
-
         if (!res.ok) {
-          setPhoneError(data.error || "Error checking phone");
+          setPhoneError(data.error || 'Error checking phone');
           setPhoneAvailable(false);
-        } else {
-          setPhoneAvailable(!data.exists);
+          return;
         }
+        setPhoneAvailable(!data.exists);
       } catch {
-        setPhoneError("Network error");
+        setPhoneError('Network error');
       }
-    }, 500);
+    }, 350);
 
     return () => clearTimeout(timer);
   }, [phone, isRegister]);
 
-  /* --------------------------------------------------------
-     PASSWORD LIVE STRENGTH
-  -------------------------------------------------------- */
   useEffect(() => {
     setPasswordChecks({
       minLen: PASSWORD_RULES.minLen(password),
@@ -188,12 +148,23 @@ export const Login = () => {
     });
   }, [password]);
 
-  /* --------------------------------------------------------
-     SUBMIT HANDLER
-  -------------------------------------------------------- */
-  const handleSubmit = async (e: any) => {
+  const resetAuthView = (toRegister: boolean) => {
+    setIsRegister(toRegister);
+    setOtpStep(false);
+    setMessage('');
+    setEmail('');
+    setPhone('');
+    setPassword('');
+    setOtp('');
+    setEmailAvailable(null);
+    setPhoneAvailable(null);
+    setEmailError(null);
+    setPhoneError(null);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMessage("");
+    setMessage('');
 
     if (
       isSqlInjection(email) ||
@@ -201,312 +172,278 @@ export const Login = () => {
       isSqlInjection(password) ||
       isSqlInjection(otp)
     ) {
-      setMessage("❌ Invalid characters detected");
+      setMessage('Invalid characters detected.');
       return;
     }
 
-    /* -------------------- OTP STEP -------------------- */
     if (otpStep) {
       setIsLoading(true);
-
       try {
         const res = await fetch(`${API_BASE}/verify-otp`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ email, otp }),
         });
-
         const data = await res.json();
-
         if (!res.ok) {
-          setMessage("❌ " + (data.error || "Incorrect OTP"));
+          setMessage(data.error || 'Incorrect OTP');
         } else {
           finishOtpLogin(data.user);
-          navigate("/upload");
+          navigate('/dashboard');
         }
       } catch {
-        setMessage("⚠️ Network error");
+        setMessage('Network error');
+      } finally {
+        setIsLoading(false);
       }
-
-      setIsLoading(false);
       return;
     }
 
-    /* -------------------- SIGNUP -------------------- */
     if (isRegister) {
       if (!EMAIL_REGEX.test(email)) {
-        setMessage("❌ Enter a valid email");
+        setMessage('Enter a valid email');
         return;
       }
-
       if (!PHONE_REGEX.test(phone)) {
-        setMessage("❌ Enter a valid 10-digit phone number");
+        setMessage('Enter a valid 10-digit phone number');
         return;
       }
-
       if (!Object.values(passwordChecks).every(Boolean)) {
-        setMessage("❌ Password too weak");
+        setMessage('Password does not meet security rules');
         return;
       }
-
-      if (emailPending) {
-        setMessage("⏳ This email is pending admin approval.");
-        return;
-      }
-
       if (emailAvailable === false) {
-        setMessage("❌ Email already exists");
+        setMessage('Email already exists');
         return;
       }
-
       if (phoneAvailable === false) {
-        setMessage("❌ Phone already exists");
+        setMessage('Phone already exists');
         return;
       }
 
       setIsLoading(true);
-
       try {
         const res = await fetch(`${API_BASE}/register`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ email, phone, password }),
         });
-
         const data = await res.json();
-
         if (!res.ok) {
-          setMessage("❌ " + (data.error || "Signup failed"));
+          setMessage(data.error || 'Signup failed');
         } else {
-          setMessage("🎉 Registration submitted. Waiting for admin approval.");
+          setMessage('Account created successfully. Please sign in.');
           setIsRegister(false);
-          setEmail("");
-          setPhone("");
-          setPassword("");
+          setPassword('');
         }
       } catch {
-        setMessage("⚠️ Network error");
+        setMessage('Network error');
+      } finally {
+        setIsLoading(false);
       }
-
-      setIsLoading(false);
       return;
     }
 
-    /* -------------------- LOGIN -------------------- */
     setIsLoading(true);
-
     try {
       const res = await fetch(`${API_BASE}/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ email, password }),
       });
-
       const data = await res.json();
-
       if (!res.ok) {
-        setMessage("❌ " + (data.error || "Login failed"));
+        setMessage(data.error || 'Login failed');
       } else if (data.otp_required) {
         setOtpStep(true);
-        setMessage("📧 OTP sent to your email");
+        setMessage('OTP sent to your email');
       }
     } catch {
-      setMessage("⚠️ Network error");
+      setMessage('Network error');
+    } finally {
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
   };
 
-  /* -------------------------
-     STATUS LABEL TEXT
-  ------------------------- */
-  const statusText = (
-    available: boolean | null,
-    err: string | null,
-    pending?: boolean
-  ) => {
-    if (err) return <span className="text-red-600">{err}</span>;
-    if (pending) return <span className="text-orange-500">Pending Approval</span>;
-    if (available === null) return <span className="text-gray-500">—</span>;
-
+  const statusText = (available: boolean | null, err: string | null) => {
+    if (err) return <span className="text-rose-600">{err}</span>;
+    if (available === null) return <span className="text-slate-400">-</span>;
     return available ? (
-      <span className="text-green-600">Available</span>
+      <span className="text-emerald-600">Available</span>
     ) : (
-      <span className="text-red-600">Taken</span>
+      <span className="text-rose-600">Taken</span>
     );
   };
 
-  /* -------------------------
-     RENDER UI
-  ------------------------- */
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-100">
-      <motion.div
-        className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg space-y-6"
-        initial={{ opacity: 0, y: 25 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <div className="flex justify-center">
-          <Logo className="w-40 h-auto" />
+    <div className="min-h-screen grid lg:grid-cols-[1.1fr_0.9fr] bg-[radial-gradient(circle_at_top_left,_#cffafe,_#eff6ff_40%,_#f8fafc)]">
+      <div className="hidden lg:flex flex-col justify-between p-10">
+        <Logo />
+        <div className="max-w-xl space-y-6">
+          <h1 className="text-5xl font-extrabold leading-tight text-slate-900">
+            Smarter portfolio tracking for families, advisors and admins.
+          </h1>
+          <p className="text-lg text-slate-600">
+            FolioPulse centralizes statements, allocations, request handling and portfolio analytics in one workspace.
+          </p>
         </div>
+        <div className="inline-flex items-center gap-2 rounded-xl border border-cyan-100 bg-cyan-50 px-4 py-3 text-sm text-cyan-800 w-fit">
+          <ShieldCheck size={16} />
+          Session-secured + OTP verified
+        </div>
+      </div>
 
-        <h1 className="text-2xl font-bold text-center">
-          {otpStep ? "Verify OTP" : isRegister ? "Create Account" : "Log In"}
-        </h1>
+      <div className="flex items-center justify-center p-4 sm:p-8">
+        <motion.div
+          initial={{ opacity: 0, y: 16, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          className="w-full max-w-md app-panel p-7 sm:p-8 space-y-6"
+        >
+          <div className="lg:hidden flex justify-center">
+            <Logo compact />
+          </div>
 
-        <form className="space-y-6" onSubmit={handleSubmit}>
-          {/* ---------- EMAIL ---------- */}
-          {!otpStep && (
-            <>
-              <div>
-                <label className="flex justify-between mb-1 font-medium">
-                  <span>Email</span>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">
+              {otpStep ? 'Verify OTP' : isRegister ? 'Create your account' : 'Welcome back'}
+            </h2>
+            <p className="text-sm text-slate-500 mt-1">
+              {otpStep
+                ? 'Enter the 6-digit OTP sent to your email.'
+                : isRegister
+                ? 'Start tracking portfolios with secure account access.'
+                : 'Sign in with email and password to continue.'}
+            </p>
+          </div>
 
-                  {/* Only show validation in SIGNUP */}
-                  {isRegister &&
-                    statusText(emailAvailable, emailError, emailPending)}
-                </label>
-
-                <input
-                  className="w-full border p-3 rounded"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value.trim());
-                    if (isRegister) {
-                      setEmailAvailable(null);
-                      setEmailError(null);
-                      setEmailPending(false);
-                    }
-                  }}
-                  required
-                />
-              </div>
-
-              {/* ---------- PHONE ---------- */}
-              {isRegister && (
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            {!otpStep && (
+              <>
                 <div>
-                  <label className="flex justify-between mb-1 font-medium">
-                    <span>Phone</span>
-                    {statusText(phoneAvailable, phoneError)}
+                  <label className="flex justify-between text-sm font-semibold text-slate-700 mb-1.5">
+                    <span>Email</span>
+                    {isRegister && statusText(emailAvailable, emailError)}
                   </label>
-
-                  <input
-                    className="w-full border p-3 rounded"
-                    maxLength={10}
-                    value={phone}
-                    onChange={(e) => {
-                      setPhone(e.target.value.trim());
-                      setPhoneAvailable(null);
-                      setPhoneError(null);
-                    }}
-                    required
-                  />
+                  <div className="relative">
+                    <Mail size={16} className="absolute left-3 top-3 text-slate-400" />
+                    <input
+                      className="app-input pl-9"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value.trim());
+                        setEmailAvailable(null);
+                        setEmailError(null);
+                      }}
+                      required
+                    />
+                  </div>
                 </div>
-              )}
-
-              {/* ---------- PASSWORD ---------- */}
-              <div>
-                <label className="block mb-1 font-medium">Password</label>
-                <input
-                  type="password"
-                  className="w-full border p-3 rounded"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
 
                 {isRegister && (
-                  <div className="mt-2 space-y-1 text-sm">
-                    {[
-                      ["minLen", "≥ 8 characters"],
-                      ["lower", "Lowercase letter"],
-                      ["upper", "Uppercase letter"],
-                      ["number", "Number"],
-                      ["special", "Special (!@#$%^&*)"],
-                    ].map(([key, label]) => (
-                      <div
-                        key={key}
-                        className={
-                          passwordChecks[key as keyof typeof passwordChecks]
-                            ? "text-green-600"
-                            : "text-gray-500"
-                        }
-                      >
-                        {passwordChecks[key as keyof typeof passwordChecks]
-                          ? "✓"
-                          : "○"}{" "}
-                        {label}
-                      </div>
-                    ))}
+                  <div>
+                    <label className="flex justify-between text-sm font-semibold text-slate-700 mb-1.5">
+                      <span>Phone</span>
+                      {statusText(phoneAvailable, phoneError)}
+                    </label>
+                    <div className="relative">
+                      <Smartphone size={16} className="absolute left-3 top-3 text-slate-400" />
+                      <input
+                        className="app-input pl-9"
+                        maxLength={10}
+                        value={phone}
+                        onChange={(e) => {
+                          setPhone(e.target.value.trim());
+                          setPhoneAvailable(null);
+                          setPhoneError(null);
+                        }}
+                        required
+                      />
+                    </div>
                   </div>
                 )}
+
+                <div>
+                  <label className="text-sm font-semibold text-slate-700 mb-1.5 block">Password</label>
+                  <div className="relative">
+                    <Lock size={16} className="absolute left-3 top-3 text-slate-400" />
+                    <input
+                      type="password"
+                      className="app-input pl-9"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  {isRegister && (
+                    <div className="mt-3 grid grid-cols-2 gap-1 text-xs text-slate-500">
+                      {[
+                        ['minLen', '8+ chars'],
+                        ['lower', 'lowercase'],
+                        ['upper', 'uppercase'],
+                        ['number', 'number'],
+                        ['special', 'special'],
+                      ].map(([key, label]) => (
+                        <div
+                          key={key}
+                          className={
+                            passwordChecks[key as keyof typeof passwordChecks]
+                              ? 'text-emerald-600'
+                              : 'text-slate-500'
+                          }
+                        >
+                          {passwordChecks[key as keyof typeof passwordChecks] ? '✓' : '•'} {label}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {otpStep && (
+              <div>
+                <label className="text-sm font-semibold text-slate-700 mb-1.5 block">One-Time Password</label>
+                <input
+                  className="app-input text-center text-xl tracking-[0.45em]"
+                  maxLength={6}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                />
               </div>
-            </>
+            )}
+
+            {message && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                {message}
+              </div>
+            )}
+
+            <button disabled={isLoading} className="btn-primary w-full">
+              {isLoading
+                ? 'Please wait...'
+                : otpStep
+                ? 'Verify OTP'
+                : isRegister
+                ? 'Create Account'
+                : 'Continue'}
+            </button>
+          </form>
+
+          {!otpStep && (
+            <button
+              type="button"
+              className="text-sm text-cyan-700 hover:text-cyan-800 font-semibold"
+              onClick={() => resetAuthView(!isRegister)}
+            >
+              {isRegister ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+            </button>
           )}
-
-          {/* ---------- OTP FIELD ---------- */}
-          {otpStep && (
-            <div>
-              <label className="mb-1 font-medium">Enter OTP</label>
-              <input
-                className="w-full border text-center p-3 rounded text-xl tracking-widest"
-                maxLength={6}
-                value={otp}
-                onChange={(e) => setOtp(e.target.value)}
-              />
-            </div>
-          )}
-
-          {/* ---------- MESSAGE ---------- */}
-          {message && (
-            <div className="p-2 text-center bg-gray-100 rounded text-sm">
-              {message}
-            </div>
-          )}
-
-          {/* ---------- SUBMIT BUTTON ---------- */}
-          <button
-            disabled={isLoading}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50"
-          >
-            {isLoading
-              ? "Please wait..."
-              : otpStep
-              ? "Verify OTP"
-              : isRegister
-              ? "Sign Up"
-              : "Sign In"}
-          </button>
-        </form>
-
-        {/* SWITCH LOGIN / SIGNUP */}
-        {!otpStep && (
-          <p
-            className="text-blue-600 text-center cursor-pointer"
-            onClick={() => {
-              setIsRegister(!isRegister);
-              // reset fields
-              setMessage("");
-              setEmail("");
-              setPhone("");
-              setPassword("");
-              // reset validation
-              setEmailAvailable(null);
-              setPhoneAvailable(null);
-              setEmailError(null);
-              setPhoneError(null);
-              setEmailPending(false);
-            }}
-          >
-            {isRegister
-              ? "Already have an account? Log in"
-              : "Don't have an account? Sign up"}
-          </p>
-        )}
-      </motion.div>
+        </motion.div>
+      </div>
     </div>
   );
 };

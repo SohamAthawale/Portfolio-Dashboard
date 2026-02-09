@@ -1,5 +1,5 @@
 import { useAuth } from '../context/AuthContext';
-import { User } from 'lucide-react';
+import { User, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export const Navbar = () => {
@@ -7,19 +7,31 @@ export const Navbar = () => {
   const navigate = useNavigate();
 
   const handleProfileClick = () => {
-    navigate('/pmsreports/profile');
+    navigate(user?.role === 'admin' ? '/admin' : '/pmsreports/profile');
   };
 
   return (
-    <header className="bg-white border-b border-gray-200 h-16 fixed top-0 right-0 left-64 z-10">
-      <div className="h-full px-6 flex items-center justify-end">
-        <div className="flex items-center gap-3">
+    <header className="h-16 fixed top-0 right-0 left-0 lg:left-72 z-20">
+      <div className="h-full px-4 sm:px-6 flex items-center justify-between border-b border-white/50 bg-white/70 backdrop-blur-xl shadow-sm">
+        <div className="hidden md:flex items-center gap-2 rounded-full border border-cyan-100 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-700">
+          <Sparkles size={14} />
+          Smart Portfolio Workspace
+        </div>
+
+        <div className="flex items-center gap-3 ml-auto">
+          {user?.role && (
+            <span className="hidden sm:inline-flex rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">
+              {user.role}
+            </span>
+          )}
           <button
             onClick={handleProfileClick}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition"
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 rounded-xl transition shadow-sm"
           >
-            <User size={18} className="text-gray-600" />
-            <span className="text-sm font-medium text-gray-700">{user?.email}</span>
+            <User size={18} className="text-slate-600" />
+            <span className="text-sm font-medium text-slate-700 truncate max-w-[180px]">
+              {user?.email}
+            </span>
           </button>
         </div>
       </div>
