@@ -33,6 +33,7 @@ import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent';
 import Logo from "../components/logo";
+import LoadingState from "../components/LoadingState";
 
 const API_BASE = import.meta.env.VITE_API_URL || '/pmsreports';
 
@@ -339,9 +340,7 @@ mfCategoryTableData.sort((a, b) =>
   if (isLoading)
     return (
       <Layout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        </div>
+        <LoadingState cards={3} lines={4} />
       </Layout>
     );
 

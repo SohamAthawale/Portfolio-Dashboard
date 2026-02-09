@@ -14,6 +14,7 @@ import { AdminProfilePage } from "./pages/AdminProfilePage";
 import { AdminPortfolioEditor } from "./pages/AdminPortfolioEditor";
 import { AdminUserDetail } from "./pages/AdminUserDetails";
 import PortfolioAudit from './pages/PortfolioAudit';
+import PortfolioComparison from './pages/PortfolioComparison';
 
 /* -------------------------------------------------
    ✅ ROLE-BASED DASHBOARD WRAPPER
@@ -53,6 +54,24 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['user']}>
                 <History />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/comparison"
+            element={
+              <ProtectedRoute allowedRoles={['user']}>
+                <PortfolioComparison />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/comparison/:portfolioId"
+            element={
+              <ProtectedRoute allowedRoles={['user']}>
+                <PortfolioComparison />
               </ProtectedRoute>
             }
           />

@@ -5,6 +5,7 @@ import { Calendar, TrendingUp, Eye, Trash2, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { PortfolioSnapshot } from '../pages/PortfolioSnapshot';
 import Logo from '../components/logo';
+import LoadingState from '../components/LoadingState';
 
 interface HistoryItem {
   portfolio_id: number;
@@ -82,9 +83,7 @@ export const History = () => {
   if (isLoading)
     return (
       <Layout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-600"></div>
-        </div>
+        <LoadingState cards={4} lines={3} />
       </Layout>
     );
 
@@ -175,6 +174,12 @@ export const History = () => {
                     className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-medium py-2 hover:from-cyan-600 hover:to-blue-700 active:scale-95 transition-all"
                   >
                     <Eye size={18} /> View
+                  </button>
+                  <button
+                    onClick={() => navigate(`/comparison/${item.portfolio_id}`)}
+                    className="flex-1 flex items-center justify-center gap-2 bg-slate-900 text-white font-medium py-2 rounded-xl hover:bg-slate-800 active:scale-95 transition-all"
+                  >
+                    <TrendingUp size={18} /> Compare
                   </button>
 
                   <button

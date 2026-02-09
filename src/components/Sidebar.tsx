@@ -7,6 +7,7 @@ import {
   LogOut,
   ClipboardList,
   MessageSquareMore,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Logo from './logo';
@@ -64,6 +65,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/upload', label: 'Upload', icon: UploadIcon },
     { path: '/history', label: 'History', icon: History },
+    { path: '/comparison', label: 'Compare', icon: ArrowRightLeft },
     { path: '/service-requests', label: 'Requests', icon: MessageSquareMore },
   ];
 
