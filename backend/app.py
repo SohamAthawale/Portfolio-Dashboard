@@ -35,9 +35,7 @@ CORS(
 
 
 app.config.update(
-    SESSION_TYPE="redis",
-    SESSION_REDIS=Redis(host="127.0.0.1", port=6379),
-    SESSION_PERMANENT=True,
+    SESSION_TYPE="filesystem",
     SESSION_USE_SIGNER=True,
     SESSION_KEY_PREFIX="pms:",
     SESSION_COOKIE_NAME="pms_session",
